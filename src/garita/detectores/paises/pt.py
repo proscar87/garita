@@ -8,9 +8,11 @@ dígitos. El primero dice qué es: 1, 2 y 3 son personas singulares; 5, 6,
 8 y 9, entidades. El 0 y el 4 no se asignan.
 
 Un solo dígito módulo 11 deja pasar 1 de cada 11 cadenas, y su formato
-por grupos de tres («123 456 789») es idéntico a media plantilla de HTML:
-un `slice 300 400 500` de hugo valida. Por eso el NIF exige contexto
-SIEMPRE: en Portugal nadie escribe un NIF sin llamarlo NIF.
+por grupos de tres es idéntico a media plantilla de HTML: un «slice» de
+tres centenas en una plantilla de hugo validaba completo. Por eso el NIF
+exige contexto SIEMPRE: en Portugal nadie escribe un NIF sin llamarlo
+NIF. (El vector literal vive en las pruebas: citarlo aquí hacía que
+Garita se encontrara a sí misma.)
 """
 from __future__ import annotations
 

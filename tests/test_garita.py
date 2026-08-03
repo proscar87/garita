@@ -1342,3 +1342,13 @@ class PaisesNuevos(unittest.TestCase):
             "{{ $shades := slice 300 400 500 }}", "x")))
         self.assertFalse(list(self._det("sin_ca").buscar(
             "m8 0v40h399730v-40zm0 194v40h399730v-40zM399738 392l", "x")))
+
+    def test_la_preposicion_sin_no_es_contexto(self):
+        # «sin» es la preposición más común del español: con ella de
+        # gatillo, cualquier repo hispano con un grupo de nueve dígitos
+        # que pase Luhn dispararía. Las siglas van en mayúsculas o no
+        # cuentan.
+        d = self._det("sin_ca")
+        self.assertFalse(list(d.buscar(
+            "quedó sin 730 425 618 pesos en la cuenta", "x")))
+        self.assertTrue(list(d.buscar("SIN 730 425 618", "x")))
