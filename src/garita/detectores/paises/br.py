@@ -73,13 +73,20 @@ def cnpj_valido(cnpj: str) -> bool:
 def detectores(cfg: Config) -> list[Detector]:
     d = []
     if cfg.activo("cpf"):
+        # Refuerzo a pesar del doble dígito verificador: uno de cada cien
+        # números de once dígitos lo pasa por azar, y las tablas de datos
+        # (unicode, coordenadas, catálogos) están llenas de números de once
+        # dígitos. Con puntos y guión dispara solo; a los dígitos pelones
+        # se les exige la palabra que los nombre.
         d.append(Detector(
             nombre="cpf", descripcion="CPF brasileño (doble dígito verificador)",
             buscar=buscador(
                 _CPF, cpf_valido, "cpf",
                 "Es un CPF válido. Identifica a una persona física en Brasil "
                 "y es la llave con la que se abre casi cualquier trámite.",
-                exentos=EXENTOS_CPF)))
+                exentos=EXENTOS_CPF,
+                contexto=re.compile(r"(?i)\bcpf\b"),
+                exige_refuerzo=True)))
     if cfg.activo("cnpj"):
         d.append(Detector(
             nombre="cnpj", descripcion="CNPJ brasileño, incluido el alfanumérico de 2026",

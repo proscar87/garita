@@ -34,8 +34,11 @@ from .linea_base import (
     construir as construir_linea_base,
     guardar as guardar_linea_base,
 )
+from .historial import revisar_historial
 from .nucleo import revisar
-from .reporte import anotaciones_github, imprimir, resumen_markdown
+from .reporte import (
+    anotaciones_github, imprimir, imprimir_historial, resumen_markdown,
+)
 from .sarif import generar as generar_sarif
 
 
@@ -80,6 +83,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--linea-base-ruta", metavar="RUTA",
                    help=f"dónde vive la línea base (por omisión, "
                         f"{NOMBRE_POR_OMISION} en la raíz del repositorio)")
+    p.add_argument("--historial", action="store_true",
+                   help="revisa TODAS las versiones de TODOS los archivos "
+                        "que han pasado por el repositorio, no sólo las "
+                        "actuales — un secreto «borrado» sigue en git")
     p.add_argument("--formato", choices=("humano", "sarif"), default="humano",
                    help="sarif produce el formato que GitHub ingiere como "
                         "alertas de code scanning (por omisión, humano)")
@@ -135,6 +142,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.explicar:
         return _explicar(cfg, detectores, raiz)
+
+    if args.historial:
+        return _historial(args, cfg, detectores, raiz)
 
     ruta_lb = (Path(args.linea_base_ruta) if args.linea_base_ruta
                else raiz / NOMBRE_POR_OMISION)
@@ -206,6 +216,39 @@ def main(argv: list[str] | None = None) -> int:
     if any(h.severidad == "error" for h in nuevos):
         return 1
     if cfg.fallar_en_aviso and any(h.severidad == "aviso" for h in nuevos):
+        return 1
+    return 0
+
+
+def _historial(args, cfg, detectores, raiz: Path) -> int:
+    """El modo auditoría: todo lo que git recuerda, no sólo lo que muestra.
+
+    Es un comando aparte y no el modo normal a propósito: recorre todas las
+    versiones de todos los archivos, tarda lo que eso tarda, y su veredicto
+    no depende de la línea base — una auditoría que perdona no es una
+    auditoría."""
+    if args.archivos:
+        print("Garita: --historial revisa el repositorio completo; no "
+              "admite archivos sueltos.", file=sys.stderr)
+        return 2
+    if args.linea_base or args.sin_linea_base or args.linea_base_ruta:
+        print("Garita: la línea base no aplica al historial. La deuda "
+              "aceptada congela el PRESENTE; la auditoría del pasado no "
+              "perdona, porque perdonar ahí es no auditar.", file=sys.stderr)
+        return 2
+    if args.formato == "sarif":
+        print("Garita: --historial todavía no habla SARIF. Las alertas de "
+              "code scanning apuntan a líneas del árbol actual, y un "
+              "hallazgo del historial suele señalar un archivo que ya no "
+              "existe.", file=sys.stderr)
+        return 2
+
+    res = revisar_historial(raiz, detectores, cfg.exenciones)
+    imprimir_historial(res)
+
+    if res.errores:
+        return 1
+    if res.avisos and cfg.fallar_en_aviso:
         return 1
     return 0
 
