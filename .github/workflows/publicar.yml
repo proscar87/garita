@@ -1,0 +1,32 @@
+# Publica en PyPI con Trusted Publishing (OIDC): PyPI confía en este
+# workflow de este repo, y no existe ningún token que guardar, rotar o
+# filtrar. Coherente con la regla de la casa: un secreto que no existe es
+# el único que no se puede commitear.
+#
+# El lado de PyPI se configura una vez en Account → Publishing:
+#   proyecto garita · dueño proscar87 · repo garita ·
+#   workflow publicar.yml · environment pypi
+name: Publicar en PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Construir
+        run: |
+          python -m pip install --quiet build
+          python -m build
+      - name: Publicar
+        uses: pypa/gh-action-pypi-publish@release/v1
