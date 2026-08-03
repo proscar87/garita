@@ -44,7 +44,7 @@ Garita es eso que faltaba.
 | `rfc` | RFC | **Dígito verificador** (módulo 11) + fecha |
 | `clabe` | CLABE interbancaria | **Dígito de control** (3-7-1, módulo 10) |
 | `nss` | NSS del IMSS | **Luhn** + exige contexto léxico en la línea |
-| `telefono` | Teléfono mexicano de 10 dígitos | Prefijo, separadores o contexto |
+| `telefono` | Teléfono mexicano de 10 dígitos | **Lada asignada en el PNN del IFT** + prefijo, separadores o contexto |
 | `secretos` | JWT, llaves privadas, tokens, URLs con contraseña | Estructura completa, no fragmentos |
 | `asignacion_sospechosa` | `password = "algo largo"` | Ignora lecturas del entorno |
 
@@ -87,7 +87,7 @@ guardián se entera solo.
 ## ¿Tu país no está?
 
 Los identificadores oficiales viven en `detectores/paises/`, **un archivo por
-país**. Hoy está México; agregar otro es un archivo, no una rama — comparten
+país**. Hoy están México, Argentina, Brasil, Chile, Colombia, España y Perú; agregar otro es un archivo, no una rama — comparten
 motor, exenciones y pruebas, así que un arreglo llega a todos el mismo día.
 
 ```yaml
@@ -113,7 +113,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.2.0
+    rev: v0.2.1
     hooks:
       - id: garita
 ```
@@ -157,6 +157,32 @@ complementan; ninguna sustituye a la otra.
 Probada en `ubuntu-latest` y `macos-latest`. En runners de Windows agrega
 `actions/setup-python@v5` antes: `python3` no siempre existe ahí.
 
+#### Con alertas en la pestaña Security (SARIF)
+
+Un hallazgo impreso en el registro de la corrida muere ahí: casi nadie abre
+los registros. Con `--formato sarif`, GitHub lo convierte en una alerta de
+code scanning — con historial y estado propio por hallazgo:
+
+```yaml
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx run garita --formato sarif --salida garita.sarif
+        continue-on-error: true
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: garita.sarif
+```
+
+El documento SARIF respeta las mismas dos reglas que todo lo demás: ningún
+valor completo en los mensajes, y nada derivado del valor en las huellas que
+GitHub usa para seguir un hallazgo entre corridas. La deuda aceptada por la
+línea base aparece como `note`, no como error.
+
 ### Como comando
 
 ```bash
@@ -164,6 +190,39 @@ pip install garita
 garita              # revisa el repositorio
 garita --explicar   # dice qué va a revisar y con qué configuración
 ```
+
+---
+
+## ¿Tienes un repositorio con hallazgos previos? Así lo enciendes hoy
+
+El caso más común no es el repositorio nuevo: es el que lleva años acumulando.
+Enciendes Garita, salen cuarenta hallazgos, el build queda rojo y no puedes
+arreglarlos hoy. Sin ayuda, las salidas son escribir cuarenta exenciones a
+mano o apagar la herramienta — y casi siempre se apaga la herramienta.
+
+Para eso existe la línea base:
+
+```bash
+garita --linea-base   # congela lo que ya estaba; escribe .garita-base.json
+git add .garita-base.json && git commit -m "Enciende Garita con línea base"
+```
+
+A partir de ahí **CI falla sólo con lo nuevo**. La deuda vieja no desaparece
+del reporte: se imprime aparte, en gris, como deuda aceptada — con la fecha en
+que la aceptaste, porque una línea base es una promesa de limpiar después y
+las promesas sin fecha no se cumplen.
+
+Tres cosas que conviene saber:
+
+- **El archivo no contiene ningún dato.** Sólo cuántos hallazgos había por
+  archivo y detector. Ni valores ni hashes: un hash de CURP se revienta por
+  fuerza bruta, así que no se guarda ningún derivado del valor. Puedes
+  commitearlo tranquilo.
+- **La deuda se paga borrando.** Cuando limpies un archivo, Garita te avisa
+  que esa entrada quedó obsoleta; regenera con `garita --linea-base` para
+  achicar el archivo. La meta es que un día puedas borrarlo completo.
+- **Para auditar de verdad**, `garita --sin-linea-base` ignora el archivo y
+  reporta todo, incluido lo aceptado.
 
 ---
 
@@ -327,7 +386,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.2.0
+    rev: v0.2.1
     hooks:
       - id: garita
 ```
@@ -341,6 +400,11 @@ repos:
 Hook first: if your only check is in CI, by the time it fails the data already
 lives in a commit — and the fix goes from "delete a line" to "rewrite history
 and notify everyone who cloned".
+
+**Existing repo with prior findings?** Run `garita --linea-base` to freeze
+them as accepted debt: CI then fails only on *new* findings, while old ones
+stay visible in the report. The baseline file stores only counts per file and
+detector — no values, no hashes — so it's safe to commit.
 
 Config, findings format and design rationale: see the Spanish sections above
 and [`docs/DISENO.md`](docs/DISENO.md). Built with
