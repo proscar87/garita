@@ -506,14 +506,33 @@ class RegresionesDeCampo(unittest.TestCase):
         # seguir siendo larga es seguir siendo un secreto.
         self.assertFalse(es_marcador("Kx9mPqR2vNw8%21aB"))
 
-    def test_telefono_sin_prefijo_es_aviso_no_error(self):
+    def test_lada_no_asignada_ya_ni_aparece(self):
         # «tel:484-695-3408» en una prueba de axios es un número de Estados
-        # Unidos. El plan de numeración 3-3-4 es idéntico al mexicano: sin
-        # +52 no hay forma de saber el país, y afirmarlo es inventar.
+        # Unidos. Antes salía como aviso porque el 3-3-4 es idéntico al
+        # mexicano; con la lista real del PNN, 484 no es una lada asignada
+        # y el número simplemente no es un teléfono mexicano.
         d = self._tel()
-        h = list(d.buscar("axios.get('tel:484-695-3408')", "x"))
-        self.assertTrue(h)
-        self.assertEqual(h[0].severidad, "aviso")
+        for t in ("axios.get('tel:484-695-3408')", "tel: 555-123-4567",
+                  "cel 212-555-0123", "contacto: 202 456 1111",
+                  "llamar al 206.684.2489"):
+            self.assertFalse(list(d.buscar(t, "x")), t)
+
+    def test_lada_no_asignada_con_52_tampoco(self):
+        # Un «+52 555…» es un número inventado para una prueba (el 555 es
+        # el prefijo ficticio de Norteamérica y no está en el PNN), no una
+        # persona alcanzable.
+        d = self._tel()
+        self.assertFalse(list(d.buscar('TEL = "+52 555 123 4567"', "x")))
+
+    def test_lada_valida_de_tres_digitos_sigue_siendo_aviso(self):
+        # 272 (Córdoba) y 961 (Tuxtla) SÍ están asignadas: la coincidencia
+        # con un número extranjero es posible, así que se avisa sin
+        # afirmar. Forzar el cero aquí sería cegar el detector.
+        d = self._tel()
+        for t in ("tel: 272-123-4567", "cel 961 123 4567"):
+            h = list(d.buscar(t, "x"))
+            self.assertTrue(h, t)
+            self.assertEqual(h[0].severidad, "aviso", t)
 
     def test_telefono_con_prefijo_sigue_siendo_error(self):
         d = self._tel()

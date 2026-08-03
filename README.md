@@ -44,7 +44,7 @@ Garita es eso que faltaba.
 | `rfc` | RFC | **Dígito verificador** (módulo 11) + fecha |
 | `clabe` | CLABE interbancaria | **Dígito de control** (3-7-1, módulo 10) |
 | `nss` | NSS del IMSS | **Luhn** + exige contexto léxico en la línea |
-| `telefono` | Teléfono mexicano de 10 dígitos | Prefijo, separadores o contexto |
+| `telefono` | Teléfono mexicano de 10 dígitos | **Lada asignada en el PNN del IFT** + prefijo, separadores o contexto |
 | `secretos` | JWT, llaves privadas, tokens, URLs con contraseña | Estructura completa, no fragmentos |
 | `asignacion_sospechosa` | `password = "algo largo"` | Ignora lecturas del entorno |
 
@@ -87,7 +87,7 @@ guardián se entera solo.
 ## ¿Tu país no está?
 
 Los identificadores oficiales viven en `detectores/paises/`, **un archivo por
-país**. Hoy está México; agregar otro es un archivo, no una rama — comparten
+país**. Hoy están México, Argentina, Brasil, Chile, Colombia, España y Perú; agregar otro es un archivo, no una rama — comparten
 motor, exenciones y pruebas, así que un arreglo llega a todos el mismo día.
 
 ```yaml
@@ -113,7 +113,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.2.0
+    rev: v0.2.1
     hooks:
       - id: garita
 ```
@@ -386,7 +386,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.2.0
+    rev: v0.2.1
     hooks:
       - id: garita
 ```

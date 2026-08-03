@@ -33,6 +33,7 @@ from typing import Iterator
 
 from ...config import Config
 from ...nucleo import Detector, Hallazgo
+from ._mx_ladas import LADAS
 
 
 # ── CURP ───────────────────────────────────────────────────────────────────
@@ -233,11 +234,16 @@ _TELEFONO = re.compile(r"""
     (?<![\d.])
     (?P<prefijo>\+?52[\s.-]?1?[\s.-]?)?
     (?P<numero>
-        (?:55|56|33|81)[\s.-]?\d{4}[\s.-]?\d{4}
-      | [2-9]\d{2}[\s.-]?\d{3}[\s.-]?\d{4}
+        (?P<lada2>55|56|33|81)[\s.-]?\d{4}[\s.-]?\d{4}
+      | (?P<lada3>[2-9]\d{2})[\s.-]?\d{3}[\s.-]?\d{4}
     )
     (?![\d.])
 """, re.VERBOSE)
+# Las ramas llevan la lada en su propio grupo porque los dígitos solos no
+# la determinan: diez dígitos que empiezan en 555 pueden agruparse
+# 55-XXXX-XXXX (lada 55, CDMX) o 555-XXX-XXXX (el 555 ficticio de
+# Norteamérica). La AGRUPACIÓN del número —2-4-4 contra 3-3-4— es la que
+# dice cuál quiso escribir quien lo escribió.
 
 _CONTEXTO_TEL = re.compile(
     r"(?i)\b(tel|tel[eé]fono|cel|celular|m[oó]vil|whats?app|contacto|"
@@ -329,13 +335,26 @@ def _buscar_telefono(texto: str, archivo: str) -> Iterator[Hallazgo]:
             # seguidos son indistinguibles de un folio o una marca de tiempo.
             if not (explicito or separado or con_contexto):
                 continue
+            # La lada tiene que estar asignada en el Plan Nacional de
+            # Numeración. Un 555, un 212 de Manhattan o un 202 de Washington
+            # comparten el formato 3-3-4 pero NO son numeración mexicana:
+            # reportarlos hacía ruido justo en los proyectos que más
+            # documentan teléfonos. Esto aplica aun con prefijo +52: un
+            # «+52 555…» es un número inventado para una prueba, no una
+            # persona alcanzable.
+            lada = m.group("lada2") or m.group("lada3")
+            if lada not in LADAS:
+                continue
             # Sólo el prefijo +52 vuelve esto una certeza. Un 3-3-4 sin
-            # prefijo es tan mexicano como estadounidense —el plan de
-            # numeración es el mismo— y la palabra «tel» en la línea no
-            # decide el país. Con contexto y lada de dos dígitos (55, 33,
-            # 81, 56) sí, porque ésas no existen fuera de México.
-            lada_mx = re.match(r"(?:55|56|33|81)", re.sub(r"\D", "", v))
-            severidad = "error" if (explicito or (con_contexto and lada_mx)) else "aviso"
+            # prefijo es tan mexicano como estadounidense y la palabra «tel»
+            # en la línea no decide el país — por eso una lada válida de
+            # tres dígitos (272 Córdoba, 961 Tuxtla) se queda en AVISO: la
+            # coincidencia con un número extranjero es posible y forzar el
+            # cero ahí sería cegar el detector. Con contexto y lada de dos
+            # dígitos sí es error: ésas no existen fuera de México.
+            severidad = ("error"
+                         if (explicito or (con_contexto and len(lada) == 2))
+                         else "aviso")
             h = _hallazgo(archivo, i, "telefono", v,
                           "Parece un teléfono mexicano. Un número de contacto "
                           "es dato personal y, a diferencia de un nombre, "
@@ -348,7 +367,8 @@ _DETECTORES = [
     ("rfc", "RFC con dígito verificador válido", _buscar_rfc),
     ("clabe", "CLABE con dígito de control válido", _buscar_clabe),
     ("nss", "NSS del IMSS (exige contexto en la línea)", _buscar_nss),
-    ("telefono", "teléfono mexicano de 10 dígitos", _buscar_telefono),
+    ("telefono", "teléfono de 10 dígitos con lada asignada en el PNN del IFT",
+     _buscar_telefono),
 ]
 
 
