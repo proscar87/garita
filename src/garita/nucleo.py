@@ -80,10 +80,33 @@ RUTAS_DE_PRUEBA = re.compile(
     r"(^|/)(tests?|testdata|test_data|fixtures?|__snapshots__|__fixtures__"
     r"|spec|specs|examples?|ejemplos?|mocks?|stubs?|testing)(/|$)"
 )
+# También por NOMBRE de archivo, no sólo por carpeta: `test_requests.py`
+# vivió años en la raíz de requests, y las 258 credenciales de broma de sus
+# versiones históricas son la prueba de que la carpeta no basta.
+ARCHIVOS_DE_PRUEBA = re.compile(
+    r"(^|/)(test_[^/]*\.py|conftest\.py)$"
+    r"|[._-](tests?|specs?)\.[A-Za-z0-9]+$"
+)
 DETECTORES_RELAJADOS_EN_PRUEBAS = frozenset({
     "llave_privada", "llave_proveedor", "jwt", "credencial_en_url",
     "asignacion_sospechosa",
 })
+
+
+def es_de_prueba(rel: str) -> bool:
+    return bool(RUTAS_DE_PRUEBA.search(rel) or ARCHIVOS_DE_PRUEBA.search(rel))
+
+
+# Registros públicos: archivos cuyo contenido es un catálogo publicado a
+# propósito. El caso concreto: los bundles de autoridades certificadoras
+# traen el CIF real de Camerfirma en el asunto de sus certificados — es
+# información pública POR DISEÑO, no una filtración. En estos archivos se
+# relajan los detectores de identificadores, pero NUNCA los de secretos:
+# un `fullchain.pem` mal armado puede traer la llave privada concatenada,
+# y ésa sí tiene que sonar.
+ARCHIVOS_DE_REGISTRO_PUBLICO = {
+    "cacert.pem", "ca-bundle.crt", "ca-bundle.pem", "ca-certificates.crt",
+}
 
 # Formatos que no contienen datos aunque sean texto: tipografías vectoriales,
 # diagramas. Sus coordenadas producen cadenas numéricas indistinguibles de un
@@ -115,6 +138,22 @@ def archivos_versionados(raiz: Path) -> list[str]:
     return [f for f in salida.split("\0") if f]
 
 
+def ruta_revisable(ruta: Path) -> tuple[bool, str]:
+    """La parte de `es_revisable` que se decide con el puro nombre.
+
+    Va aparte porque el historial revisa blobs que ya no existen como
+    archivos: ahí no hay `stat`, pero la extensión y el nombre siguen
+    diciendo lo mismo.
+    """
+    if ruta.suffix.lower() in EXTENSIONES_BINARIAS:
+        return False, "binario"
+    if ruta.suffix.lower() in EXTENSIONES_SIN_DATOS:
+        return False, "formato vectorial"
+    if ruta.name in ARCHIVOS_SIN_DATOS:
+        return False, "archivo de bloqueo de dependencias"
+    return True, ""
+
+
 def es_revisable(ruta: Path) -> tuple[bool, str]:
     """¿Se revisa? Y si no, por qué.
 
@@ -123,12 +162,9 @@ def es_revisable(ruta: Path) -> tuple[bool, str]:
     una marca verde sin revisión. En repositorios reales eso ya escondía
     volcados de decenas de megabytes.
     """
-    if ruta.suffix.lower() in EXTENSIONES_BINARIAS:
-        return False, "binario"
-    if ruta.suffix.lower() in EXTENSIONES_SIN_DATOS:
-        return False, "formato vectorial"
-    if ruta.name in ARCHIVOS_SIN_DATOS:
-        return False, "archivo de bloqueo de dependencias"
+    revisable, motivo = ruta_revisable(ruta)
+    if not revisable:
+        return False, motivo
     try:
         tam = ruta.stat().st_size
     except OSError:
@@ -152,19 +188,14 @@ _BOM = (
 )
 
 
-def leer(ruta: Path) -> str | None:
-    """Devuelve el texto, o None si el archivo es binario de verdad.
+def descifrar(crudo: bytes) -> str | None:
+    """Bytes a texto, o None si es binario de verdad.
 
     La detección de binario es por byte nulo y no por extensión: un `.dat`
     sin extensión conocida puede ser texto, y un `.txt` puede no serlo. Pero
     antes se prueban las marcas de orden de bytes, porque un archivo UTF-16
     está lleno de nulos y sí es texto.
     """
-    try:
-        crudo = ruta.read_bytes()
-    except OSError:
-        return None
-
     for marca, codificacion in _BOM:
         if crudo.startswith(marca):
             try:
@@ -175,6 +206,15 @@ def leer(ruta: Path) -> str | None:
     if b"\0" in crudo:
         return None
     return crudo.decode("utf-8", "replace")
+
+
+def leer(ruta: Path) -> str | None:
+    """Devuelve el texto del archivo, o None si es binario o ilegible."""
+    try:
+        crudo = ruta.read_bytes()
+    except OSError:
+        return None
+    return descifrar(crudo)
 
 
 # ── Exenciones ─────────────────────────────────────────────────────────────
@@ -257,7 +297,8 @@ def revisar(
             if fnmatch.fnmatch(rel, e.patron):
                 patrones_vistos.add(e.patron)
 
-        en_pruebas = bool(RUTAS_DE_PRUEBA.search(rel))
+        en_pruebas = es_de_prueba(rel)
+        registro_publico = ruta.name in ARCHIVOS_DE_REGISTRO_PUBLICO
         for det in dets:
             cubierto = next((e for e in exen if e.cubre(rel, det.nombre)), None)
             if cubierto is not None:
@@ -271,6 +312,8 @@ def revisar(
                 # `llave_privada`, `jwt` y demás, y sólo algunos se relajan en
                 # rutas de prueba.
                 if en_pruebas and h.detector in DETECTORES_RELAJADOS_EN_PRUEBAS:
+                    continue
+                if registro_publico and h.detector not in DETECTORES_RELAJADOS_EN_PRUEBAS:
                     continue
                 res.hallazgos.append(h)
 

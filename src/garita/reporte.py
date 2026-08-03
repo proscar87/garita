@@ -249,3 +249,80 @@ def resumen_markdown(res: Resultado, base=None, nuevos=None,
     lineas += ["", "Cada hallazgo trae su motivo y su arreglo en el registro "
                "completo de la ejecución."]
     return "\n".join(lineas) + "\n"
+
+
+def imprimir_historial(res, salida=None) -> None:
+    """El reporte del historial separa lo que la revisión normal ya ve de lo
+    que sólo el historial recuerda, porque el arreglo es distinto: lo vivo
+    se arregla editando; lo «borrado» sólo se arregla rotando — y, si se
+    decide, reescribiendo historia con respaldo. Decirlos revueltos invita
+    a arreglar el que se ve y creer que el otro no existe."""
+    salida = salida if salida is not None else sys.stdout
+    n = _color(salida.isatty() and not _en_github())
+
+    if res.omitidos_grandes:
+        print(file=salida)
+        print(n("! Sin revisar por tamaño:", "amarillo"), file=salida)
+        for etiqueta, motivo in res.omitidos_grandes[:10]:
+            print(n(f"    {etiqueta} — {motivo}", "gris"), file=salida)
+        if len(res.omitidos_grandes) > 10:
+            print(n(f"    …y {len(res.omitidos_grandes) - 10} más", "gris"),
+                  file=salida)
+
+    print(file=salida)
+    print(n(f"Historial: {res.blobs_revisados} versiones de archivo "
+            f"revisadas en {res.commits} commits "
+            f"({res.blobs_omitidos} omitidas: binarias, muy grandes o sin "
+            f"datos).", "gris"), file=salida)
+
+    if not res.hallazgos:
+        print(n("✓ Garita: el historial está limpio.", "verde"), file=salida)
+        return
+
+    muertos = [h for h in res.hallazgos if not h.vivo]
+    vivos = [h for h in res.hallazgos if h.vivo]
+
+    def _bloque(titulo, tono, hs):
+        print(file=salida)
+        print(n(titulo, tono), file=salida)
+        for hh in hs:
+            h = hh.hallazgo
+            marca = "✗" if h.severidad == "error" else "!"
+            tono_h = "rojo" if h.severidad == "error" else "amarillo"
+            duracion = (f" · en {hh.versiones} versiones del archivo"
+                        if hh.versiones > 1 else "")
+            print(f"  {n(marca, tono_h)} {n(h.archivo, 'negrita')} · "
+                  f"desde el commit {hh.commit} ({hh.fecha}) · línea {h.linea}"
+                  f"{duracion}  {n(h.detector, 'negrita')}  {h.que}",
+                  file=salida)
+            print(f"      {n(h.por_que, 'gris')}", file=salida)
+
+    if muertos:
+        _bloque("Sólo en el historial — se borró del árbol, pero git no "
+                "olvida (vive en cada clon y cada fork):", "rojo", muertos)
+    if vivos:
+        _bloque("Todavía en el árbol — la revisión normal también lo ve:",
+                "amarillo", vivos)
+
+    e, a = len(res.errores), len(res.avisos)
+    resumen = []
+    if e:
+        resumen.append(n(f"{e} error{'es' if e != 1 else ''}", "rojo"))
+    if a:
+        resumen.append(n(f"{a} aviso{'s' if a != 1 else ''}", "amarillo"))
+    print(file=salida)
+    print("Garita: " + " · ".join(resumen) + n(" en el historial", "gris"),
+          file=salida)
+
+    if muertos:
+        print(file=salida)
+        print(n("Borrar el archivo no borró el dato. En orden:", "gris"),
+              file=salida)
+        print(n("  1. Si es una credencial, RÓTALA HOY. Eso invalida todas "
+                "las copias; lo demás es limpieza.", "gris"), file=salida)
+        print(n("  2. Si es un dato personal, evalúa si el historial debe "
+                "limpiarse (git-filter-repo), CON respaldo previo y "
+                "avisando a quien haya clonado. Garita no reescribe "
+                "historia: esa decisión es humana.", "gris"), file=salida)
+        print(n("  3. Si es legítimo que esté ahí, exenta la ruta en "
+                ".garita.yml con su motivo.", "gris"), file=salida)

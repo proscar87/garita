@@ -113,7 +113,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.2.1
+    rev: v0.3.0
     hooks:
       - id: garita
 ```
@@ -184,6 +184,36 @@ El documento SARIF respeta las mismas dos reglas que todo lo demás: ningún
 valor completo en los mensajes, y nada derivado del valor en las huellas que
 GitHub usa para seguir un hallazgo entre corridas. La deuda aceptada por la
 línea base aparece como `note`, no como error.
+
+## El historial también cuenta
+
+```bash
+garita --historial
+```
+
+Revisa **todas las versiones de todos los archivos** que han pasado por el
+repositorio — no sólo las actuales. El caso que duele: el secreto commiteado
+hace tres meses y «borrado» al día siguiente. La revisión normal no lo ve;
+el historial sí, porque git no olvida: el dato vive en cada clon y cada fork.
+
+El reporte separa lo que **sigue en el árbol** (se arregla como siempre) de
+lo que está **sólo en el historial** — ahí borrar el archivo no borró nada:
+si es una credencial se rota HOY, y limpiar el historial (`git-filter-repo`)
+es una decisión humana que Garita no toma ni automatiza jamás.
+
+Detalles a saber:
+
+- Recorre **blobs únicos**, no commits: cada versión de cada archivo se
+  revisa una sola vez, y la misma cadena a través de N versiones se reporta
+  como UN hallazgo con su commit de origen. En un repo mediano (~6,000
+  commits) tarda uno o dos minutos.
+- Aplica **las mismas reglas** que la revisión normal: mismos detectores,
+  mismas exenciones (a la ruta histórica), mismos filtros. Dos motores con
+  reglas distintas darían dos verdades distintas.
+- **La línea base no aplica**: congela el presente, y una auditoría del
+  pasado que perdona no es una auditoría.
+
+---
 
 ### Como comando
 
@@ -388,7 +418,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.2.1
+    rev: v0.3.0
     hooks:
       - id: garita
 ```
@@ -407,6 +437,13 @@ and notify everyone who cloned".
 them as accepted debt: CI then fails only on *new* findings, while old ones
 stay visible in the report. The baseline file stores only counts per file and
 detector — no values, no hashes — so it's safe to commit.
+
+**And the past counts too:** `garita --historial` audits every version of
+every file that ever passed through the repo — the secret committed three
+months ago and "deleted" the next day is invisible to a normal scan, but git
+never forgets. The report separates what's still in the tree from what lives
+only in history, where the fix is rotating the credential — never a silent
+history rewrite.
 
 Config, findings format and design rationale: see the Spanish sections above
 and [`docs/DISENO.md`](docs/DISENO.md). Built with

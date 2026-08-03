@@ -179,6 +179,13 @@ _BANCOS = {
 }
 
 
+# La CLABE del material de difusión de la banca mexicana (la trae el
+# instructivo de la ABM y medio tutorial en línea). Es el equivalente de la
+# llave de ejemplo de AWS: aparecerá en documentación por siempre, y no es
+# la cuenta de nadie.
+CLABE_DE_MUESTRA = {"032180000118359719"}
+
+
 def _clabe_es_relleno(clabe: str) -> bool:
     """Cuentas en ceros o nueves: son marcadores de documentación."""
     cuenta = clabe[6:17]
@@ -300,7 +307,8 @@ def _buscar_clabe(texto: str, archivo: str) -> Iterator[Hallazgo]:
             if dentro_de_un_numero(linea, m.start(), m.end()):
                 continue
             v = _SEPARADORES.sub("", m.group(0))
-            if not clabe_valida(v) or _clabe_es_relleno(v) or not _banco_existe(v):
+            if (v in CLABE_DE_MUESTRA or not clabe_valida(v)
+                    or _clabe_es_relleno(v) or not _banco_existe(v)):
                 continue
             yield _hallazgo(archivo, i, "clabe", v,
                             "Es una CLABE con dígito de control válido. "

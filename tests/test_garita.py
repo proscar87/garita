@@ -356,7 +356,8 @@ class IdentificadoresMexicanos(unittest.TestCase):
     def test_clabe_agrupada_con_guiones(self):
         """Es el formato en que la imprime un estado de cuenta."""
         d = self._det("clabe")
-        self.assertTrue(list(d.buscar("CLABE 0321-8000-0118-3597-19", "f")))
+        # La de muestra de la ABM quedó exenta; se usa una sintética.
+        self.assertTrue(list(d.buscar("CLABE 0021-8000-0000-0010-08", "f")))
         self.assertFalse(list(d.buscar("CLABE 0321-8000-0118-3597-10", "f")))
 
     def test_clabe_no_confunde_fechas(self):
@@ -948,3 +949,184 @@ class SoloCambios(unittest.TestCase):
                 os.chdir(antes)
             self.assertEqual(argv[:2], ["--config", "otra.yml"])
             self.assertIn("limpio.py", argv)
+
+
+class Historial(unittest.TestCase):
+    """El caso que duele: el secreto commiteado hace tres meses y «borrado»
+    al día siguiente. La revisión normal no lo ve; el historial sí — y el
+    reporte tiene que decir que borrar el archivo no borró el dato."""
+
+    CURP = "AABB900101HDFCDF09"
+    OTRA = "CEDD850505MNELTN01"
+
+    def _commit(self, raiz, mensaje):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                        "commit", "-q", "-m", mensaje], cwd=raiz, check=True)
+
+    def _repo(self):
+        """main con: commit 1 (secreto.py + limpio.py), commit 2 (borra
+        secreto.py), commit 3 (vivo.csv). Devuelve (td, raiz)."""
+        td = TemporaryDirectory()
+        raiz = Path(td.name)
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=raiz, check=True)
+        (raiz / "secreto.py").write_text(
+            f"curp: {self.CURP}\n", encoding="utf-8")
+        (raiz / "limpio.py").write_text("x = 1\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+        self._commit(raiz, "inicio")
+        subprocess.run(["git", "rm", "-q", "secreto.py"], cwd=raiz, check=True)
+        self._commit(raiz, "borra el secreto (cree)")
+        (raiz / "vivo.csv").write_text(f"curp: {self.OTRA}\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+        self._commit(raiz, "dato vivo")
+        return td, raiz
+
+    def test_el_secreto_borrado_aparece_y_dice_que_ya_no_esta(self):
+        td, raiz = self._repo()
+        with td:
+            codigo, normal = correr_garita(raiz)
+            self.assertNotIn("secreto.py", normal)  # la normal no lo ve
+            codigo, salida = correr_garita(raiz, "--historial")
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("Sólo en el historial", salida)
+            self.assertIn("secreto.py", salida)
+            self.assertIn("no borró el dato", salida)
+            self.assertIn("git-filter-repo", salida)
+
+    def test_lo_vivo_se_marca_como_vivo(self):
+        td, raiz = self._repo()
+        with td:
+            _, salida = correr_garita(raiz, "--historial")
+            self.assertIn("Todavía en el árbol", salida)
+            despues = salida.index("Todavía en el árbol")
+            self.assertIn("vivo.csv", salida[despues:])
+            self.assertNotIn("vivo.csv", salida[:despues])
+
+    def test_reporta_el_commit_que_lo_introdujo(self):
+        td, raiz = self._repo()
+        with td:
+            primero = subprocess.run(
+                ["git", "rev-list", "--max-parents=0", "HEAD"],
+                cwd=raiz, capture_output=True, check=True,
+            ).stdout.decode().strip()[:10]
+            _, salida = correr_garita(raiz, "--historial")
+            self.assertIn(f"commit {primero}", salida)
+
+    def test_historial_limpio_sale_cero(self):
+        td = TemporaryDirectory()
+        raiz = Path(td.name)
+        with td:
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=raiz, check=True)
+            (raiz / "limpio.py").write_text("x = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "inicio")
+            codigo, salida = correr_garita(raiz, "--historial")
+            self.assertEqual(codigo, 0, salida)
+            self.assertIn("historial está limpio", salida)
+
+    def test_exencion_de_hoy_aplica_a_la_ruta_historica(self):
+        # Mismas reglas que el motor normal: dos motores con reglas
+        # distintas darían dos verdades distintas.
+        td, raiz = self._repo()
+        with td:
+            (raiz / ".garita.yml").write_text(
+                "exenciones:\n"
+                "  - archivo: secreto.py\n"
+                "    motivo: datos sinteticos de una demo\n"
+                "    detectores: curp\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "config")
+            _, salida = correr_garita(raiz, "--historial")
+            self.assertNotIn("secreto.py", salida)
+            self.assertIn("vivo.csv", salida)  # el resto sigue vivo
+
+    def test_no_admite_archivos_sueltos_ni_linea_base_ni_sarif(self):
+        td, raiz = self._repo()
+        with td:
+            for argv in (("--historial", "limpio.py"),
+                         ("--historial", "--linea-base"),
+                         ("--historial", "--sin-linea-base"),
+                         ("--historial", "--formato", "sarif")):
+                codigo, salida = correr_garita(raiz, *argv)
+                self.assertEqual(codigo, 2, (argv, salida))
+
+    def test_blob_grande_del_pasado_se_dice_no_se_calla(self):
+        td = TemporaryDirectory()
+        raiz = Path(td.name)
+        with td:
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=raiz, check=True)
+            (raiz / "volcado.csv").write_text(
+                "x" * 2_100_000, encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "volcado")
+            subprocess.run(["git", "rm", "-q", "volcado.csv"], cwd=raiz, check=True)
+            self._commit(raiz, "lo borra")
+            _, salida = correr_garita(raiz, "--historial")
+            self.assertIn("Sin revisar por tamaño", salida)
+            self.assertIn("volcado.csv", salida)
+
+
+class RegresionesDelHistorial(unittest.TestCase):
+    """Falsos positivos que salieron al auditar historiales completos de
+    proyectos reales (requests: 307 antes de esto, 5 después). El pasado de
+    un repo grande es un muestrario de layouts que ya no se usan."""
+
+    def test_archivo_de_prueba_por_nombre_no_solo_por_carpeta(self):
+        # test_requests.py vivió años en la RAÍZ de requests, con cientos de
+        # credenciales de broma. La carpeta tests/ no lo cubría.
+        from garita.nucleo import es_de_prueba
+        for ruta in ("test_requests.py", "src/foo_test.go",
+                     "web/boton.spec.ts", "lib/util.test.js", "conftest.py"):
+            self.assertTrue(es_de_prueba(ruta), ruta)
+        for ruta in ("requests/models.py", "protesta.py", "attest.py",
+                     "src/testigo.py"):
+            self.assertFalse(es_de_prueba(ruta), ruta)
+
+    def test_prueba_por_nombre_relaja_secretos_pero_no_pii(self):
+        td = repo_temporal({
+            "test_api.py": ('URL = "postgres://admin:Kx9mPqR2vNw8@h:5432/d"\n'
+                            "curp: AABB900101HDFCDF09\n"),
+        })
+        with td:
+            raiz = Path(td.name)
+            cfg = cargar_config(raiz)
+            res = revisar(raiz, construir(cfg, raiz), cfg.exenciones)
+            detectores = {h.detector for h in res.hallazgos}
+            self.assertNotIn("credencial_en_url", detectores)
+            self.assertIn("curp", detectores)  # un dato personal sigue siéndolo
+
+    def test_bundle_de_ca_calla_identificadores_pero_no_llaves(self):
+        # El cacert.pem de requests trae el CIF real de Camerfirma en el
+        # asunto de sus certificados: público POR DISEÑO. Pero un bundle
+        # mal armado puede traer la llave privada concatenada, y ésa suena.
+        td = repo_temporal({
+            "cacert.pem": ("# Subject: CN=Chambers of Commerce Root, "
+                           "CIF A12345674\n"
+                           "-----BEGIN RSA PRIVATE KEY-----\nabc\n"),
+        })
+        with td:
+            raiz = Path(td.name)
+            cfg = cargar_config(raiz)
+            res = revisar(raiz, construir(cfg, raiz), cfg.exenciones)
+            detectores = {h.detector for h in res.hallazgos}
+            self.assertNotIn("cif", detectores)
+            self.assertIn("llave_privada", detectores)
+
+    def test_cpf_pelon_exige_que_lo_nombren(self):
+        # idnadata.py de requests: una tabla unicode con un número de once
+        # dígitos que pasa el módulo 11 por azar (uno de cada cien lo hace).
+        from garita.detectores.paises.br import detectores as br
+        d = {x.nombre: x for x in br(Config())}["cpf"]
+        self.assertFalse(list(d.buscar("rango = (11144477735, 4)", "x")))
+        self.assertTrue(list(d.buscar("cpf: 11144477735", "x")))
+        self.assertTrue(list(d.buscar("titular 111.444.777-35", "x")))
+
+    def test_la_clabe_de_muestra_de_la_banca_no_dispara(self):
+        # La del instructivo de la ABM, que el propio historial de Garita
+        # cargaba en la ruta vieja del módulo. Es la llave de ejemplo de
+        # AWS en versión mexicana: documentación, no la cuenta de nadie.
+        from garita.detectores.paises.mx import detectores as mx
+        d = {x.nombre: x for x in mx(Config())}["clabe"]
+        self.assertFalse(list(d.buscar("CLABE 032180000118359719", "x")))
+        # Y la detección sigue viva: una CLABE válida cualquiera sí suena.
+        self.assertTrue(list(d.buscar("CLABE 002180000000001008", "x")))
