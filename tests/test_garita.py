@@ -18,7 +18,9 @@ apretar el patrón de JWT.
 """
 from __future__ import annotations
 
+import pathlib
 import subprocess
+import tempfile
 import sys
 import unittest
 from pathlib import Path
@@ -27,9 +29,10 @@ from tempfile import TemporaryDirectory
 AQUI = Path(__file__).resolve().parent
 sys.path.insert(0, str(AQUI.parent / "src"))
 
-from garita.config import ConfigInvalida, cargar as cargar_config  # noqa: E402
+from garita.config import Config, ConfigInvalida, cargar as cargar_config  # noqa: E402
 from garita.detectores import construir                            # noqa: E402
-from garita.detectores.secretos import buscar, buscar_asignaciones # noqa: E402
+from garita.detectores.secretos import (                              # noqa: E402
+    buscar, buscar_asignaciones, es_marcador)
 from garita.fuentes import FuenteInvalida, a_patron, cargar        # noqa: E402
 from garita.detectores.paises.mx import (                             # noqa: E402
     clabe_valida, curp_valido, nss_valido, rfc_valido,
@@ -461,3 +464,78 @@ class DePuntaAPunta(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class RegresionesDeCampo(unittest.TestCase):
+    """Falsos positivos hallados corriendo Garita contra diez proyectos
+    públicos reales (axios, Chart.js, express, faker, flask, hugo, prettier,
+    requests, sinatra, vite — 19,920 archivos). Cada uno rompía el build de
+    alguien que no tiene un solo dato personal en su repositorio, que es la
+    forma más rápida de que se desinstale la herramienta."""
+
+    def test_prefijo_posesivo_sigue_siendo_marcador(self):
+        # axios documenta la autenticación básica con «myUser:myPassword».
+        for v in ("myPassword", "myUser", "miClave", "mi_secreto"):
+            self.assertTrue(es_marcador(v), v)
+
+    def test_marcador_codificado_en_porcentaje(self):
+        # «p%40ss» aparenta seis caracteres y es «p@ss»: cuatro.
+        self.assertTrue(es_marcador("p%40ss"))
+
+    def test_una_contrasena_real_codificada_no_se_perdona(self):
+        # El arreglo anterior no debe volverse una puerta: decodificar y
+        # seguir siendo larga es seguir siendo un secreto.
+        self.assertFalse(es_marcador("Kx9mPqR2vNw8%21aB"))
+
+    def test_telefono_sin_prefijo_es_aviso_no_error(self):
+        # «tel:484-695-3408» en una prueba de axios es un número de Estados
+        # Unidos. El plan de numeración 3-3-4 es idéntico al mexicano: sin
+        # +52 no hay forma de saber el país, y afirmarlo es inventar.
+        d = self._tel()
+        h = list(d.buscar("axios.get('tel:484-695-3408')", "x"))
+        self.assertTrue(h)
+        self.assertEqual(h[0].severidad, "aviso")
+
+    def test_telefono_con_prefijo_sigue_siendo_error(self):
+        d = self._tel()
+        h = list(d.buscar('TEL = "+52 55 1234 5678"', "x"))
+        self.assertEqual(h[0].severidad, "error")
+
+    def test_lada_inequivocamente_mexicana_con_contexto_es_error(self):
+        # 55, 56, 33 y 81 son ladas de dos dígitos: no existen fuera de México.
+        d = self._tel()
+        h = list(d.buscar("cel 55 1234 5678", "x"))
+        self.assertEqual(h[0].severidad, "error")
+
+    def _tel(self):
+        from garita.detectores.paises.mx import detectores
+        return {d.nombre: d for d in detectores(Config())}["telefono"]
+
+
+class ExencionesMuertas(unittest.TestCase):
+    """Una exención que no aplicó a nada es un renombre silencioso: el archivo
+    lleva revisándose sin protección desde que cambió de nombre, y quien
+    escribió la regla sigue creyendo que está cubierto."""
+
+    def test_una_exencion_que_no_aplica_se_reporta(self):
+        with tempfile.TemporaryDirectory() as d:
+            raiz = pathlib.Path(d)
+            subprocess.run(["git", "init", "-q"], cwd=raiz, check=True)
+            (raiz / "vive.py").write_text("x = 1\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            res = revisar(raiz, [], [
+                Exencion(patron="vive.py", motivo="m", detectores=()),
+                Exencion(patron="se_borro.py", motivo="m", detectores=()),
+            ])
+            self.assertEqual(res.exenciones_muertas, ["se_borro.py"])
+
+    def test_revisando_archivos_sueltos_no_acusa_falsamente(self):
+        # En el hook de pre-commit sólo llegan los archivos en preparación:
+        # que una exención no aplique ahí no dice nada del repositorio.
+        with tempfile.TemporaryDirectory() as d:
+            raiz = pathlib.Path(d)
+            subprocess.run(["git", "init", "-q"], cwd=raiz, check=True)
+            (raiz / "a.py").write_text("x = 1\n", encoding="utf-8")
+            (raiz / "b.py").write_text("y = 2\n", encoding="utf-8")
+            res = revisar(raiz, [], [Exencion("b.py", "m", ())], archivos=["a.py"])
+            self.assertEqual(res.exenciones_muertas, [])

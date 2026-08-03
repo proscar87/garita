@@ -212,6 +212,8 @@ class Resultado:
     """Los que se saltaron por tamaño, CON su motivo. Se reportan siempre:
     callarlos convierte la revisión en una promesa vacía."""
     exentos_aplicados: dict[str, int] = field(default_factory=dict)
+    exenciones_muertas: list[str] = field(default_factory=list)
+    """Exenciones cuyo patrón no coincidió con ningún archivo revisado."""
 
     @property
     def errores(self) -> list[Hallazgo]:
@@ -232,6 +234,7 @@ def revisar(
     dets = [d for d in detectores if d.activo]
     exen = list(exenciones)
     res = Resultado()
+    patrones_vistos: set[str] = set()
 
     for rel in (archivos if archivos is not None else archivos_versionados(raiz)):
         ruta = raiz / rel
@@ -250,6 +253,10 @@ def revisar(
             continue
         res.archivos_revisados += 1
 
+        for e in exen:
+            if fnmatch.fnmatch(rel, e.patron):
+                patrones_vistos.add(e.patron)
+
         en_pruebas = bool(RUTAS_DE_PRUEBA.search(rel))
         for det in dets:
             cubierto = next((e for e in exen if e.cubre(rel, det.nombre)), None)
@@ -266,6 +273,16 @@ def revisar(
                 if en_pruebas and h.detector in DETECTORES_RELAJADOS_EN_PRUEBAS:
                     continue
                 res.hallazgos.append(h)
+
+    # Una exención que nunca se aplicó apunta a un archivo que ya no existe o
+    # que se renombró. En el segundo caso la exención se cayó sin avisar y el
+    # archivo lleva quién sabe cuánto revisándose sin que nadie lo mirara; en
+    # el primero es configuración muerta que da una sensación de cobertura que
+    # no existe. Callarlo es lo mismo que mentir con silencio.
+    if archivos is None:
+        res.exenciones_muertas = [
+            e.patron for e in exen if e.patron not in patrones_vistos
+        ]
 
     return res
 

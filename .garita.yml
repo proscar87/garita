@@ -10,7 +10,7 @@ exenciones:
     motivo: documenta los algoritmos citando las claves de muestra oficiales de RENAPO, el SAT y el IMSS; ninguna pertenece a una persona
     detectores: curp, rfc, clabe, nss, telefono
 
-  - archivo: src/garita/detectores/mexico.py
+  - archivo: src/garita/detectores/paises/mx.py
     motivo: contiene las listas blancas de claves de muestra y genéricos oficiales
     detectores: curp, rfc
 

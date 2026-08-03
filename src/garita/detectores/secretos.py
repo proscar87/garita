@@ -112,7 +112,7 @@ MARCADORES = re.compile(
     r"(?i)(tu[_-]?\w+|your[_-]?\w+|mi[_-]?(clave|llave|secreto)|xxx+|placeholder"
     r"|cambiame|change[_-]?me"
     r"|ejemplo|example|dummy|fake|test[_-]?key|redacted|s3cr3t|hunter2"
-    r"|lorem|ipsum)$|^(pass(word)?|clave|secreto|secret|contrase[nñ]a|user|usuario|admin|root|token|apikey)$"
+r"|lorem|ipsum|redacted|s3cr3t|hunter2)"
 )
 
 # Éstos sólo son marcador si constituyen casi todo el valor: «abcdef» dentro
@@ -120,12 +120,28 @@ MARCADORES = re.compile(
 _RELLENO = re.compile(r"(?i)^[\W_]*(abcdef(ghi?j?k?)?|123456(789?0?)?|foo|bar|baz)[\W_\d]*$")
 
 
+# Valores que SON el marcador completo, no que lo contienen.
+_ES_TODO_MARCADOR = re.compile(
+    r"(?i)^[\W_]*(m[iy][\W_]?)?(pass(word)?|clave|secreto|secret|contrase[nñ]a"
+    r"|user|usuario"
+    r"|admin|root|token|apikey|api[_-]?key|value|valor)[\W_\d]*$"
+)
+
+
 def es_marcador(valor: str) -> bool:
     """¿El VALOR es un marcador de posición? No la línea: el valor."""
     v = valor.strip("\"'")
+    # Codificado en porcentaje, «p%40ss» aparenta seis caracteres y son
+    # cuatro. Se juzga lo que de verdad es.
+    if "%" in v:
+        from urllib.parse import unquote
+        d = unquote(v)
+        if len(d) < 6:
+            return True
+        v = d
     if not v or v.startswith("<") or v.startswith("${") or v.startswith("$("):
         return True
-    if MARCADORES.search(v) or _RELLENO.match(v):
+    if MARCADORES.search(v) or _RELLENO.match(v) or _ES_TODO_MARCADOR.match(v):
         return True
     # Un valor de un solo carácter repetido no es un secreto.
     nucleo = re.sub(r"[^A-Za-z0-9]", "", v)
@@ -158,9 +174,20 @@ def _jwt_de_demostracion(token: str) -> bool:
     if isinstance(exp, (int, float)) and exp < time.time() - 31_536_000:
         return True
     texto_carga = json.dumps(carga).lower()
-    return any(m in texto_carga for m in
-               ("example", "ejemplo", "demo", "test", "foo", "1234567890",
-                "john doe", "jane doe", "sample"))
+    if any(m in texto_carga for m in
+           ("example", "ejemplo", "demo", "test", "foo", "1234567890",
+            "john doe", "jane doe", "sample", "acme", "widget", "contoso",
+            "localhost", "your-", "tu-")):
+        return True
+
+    # UN TOKEN QUE NO IDENTIFICA A NADIE NO ES UNA CREDENCIAL. Si la carga
+    # útil no trae ni sujeto, ni rol, ni correo, ni emisor real —sólo fechas—
+    # no da acceso a nada y es de ilustración. Es el caso de los ejemplos de
+    # documentación que sólo enseñan la forma del token.
+    IDENTIDAD = {"sub", "uid", "user", "user_id", "username", "email", "role",
+                 "roles", "scope", "scp", "aud", "client_id", "azp", "name",
+                 "preferred_username", "groups", "permissions"}
+    return not (IDENTIDAD & set(k.lower() for k in carga))
 
 
 def buscar(texto: str, archivo: str) -> Iterator[Hallazgo]:
@@ -227,11 +254,16 @@ def buscar_asignaciones(texto: str, archivo: str) -> Iterator[Hallazgo]:
             continue
         if es_marcador(valor):
             continue
-        yield _h(
-            archivo, i, "asignacion_sospechosa", recortar(valor),
-            f"La variable «{m.group(1)}» está asignada a un valor literal "
-            f"largo. Puede ser una credencial real: los formatos de "
-            f"proveedor son sólo una parte de lo que se filtra.",
-            "Si es un secreto, rótalo y muévelo al entorno. Si no lo es, "
-            "renombra la variable o exenta el archivo con su motivo.",
+        yield Hallazgo(
+            archivo=archivo, linea=i, detector="asignacion_sospechosa",
+            que=recortar(valor), severidad="aviso",
+            por_que=(
+                f"La variable «{m.group(1)}» está asignada a un valor literal "
+                f"largo. PUEDE ser una credencial: los formatos de proveedor "
+                f"son sólo una parte de lo que se filtra. Va como aviso "
+                f"porque es una sospecha, no una certeza — hay llaves "
+                f"públicas por diseño, como las de búsqueda."),
+            como_arreglar=(
+                "Si es un secreto, rótalo y muévelo al entorno. Si es público "
+                "a propósito, exenta el archivo con ese motivo."),
         )

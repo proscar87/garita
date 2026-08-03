@@ -329,7 +329,13 @@ def _buscar_telefono(texto: str, archivo: str) -> Iterator[Hallazgo]:
             # seguidos son indistinguibles de un folio o una marca de tiempo.
             if not (explicito or separado or con_contexto):
                 continue
-            severidad = "error" if (explicito or con_contexto) else "aviso"
+            # Sólo el prefijo +52 vuelve esto una certeza. Un 3-3-4 sin
+            # prefijo es tan mexicano como estadounidense —el plan de
+            # numeración es el mismo— y la palabra «tel» en la línea no
+            # decide el país. Con contexto y lada de dos dígitos (55, 33,
+            # 81, 56) sí, porque ésas no existen fuera de México.
+            lada_mx = re.match(r"(?:55|56|33|81)", re.sub(r"\D", "", v))
+            severidad = "error" if (explicito or (con_contexto and lada_mx)) else "aviso"
             h = _hallazgo(archivo, i, "telefono", v,
                           "Parece un teléfono mexicano. Un número de contacto "
                           "es dato personal y, a diferencia de un nombre, "

@@ -60,6 +60,17 @@ def imprimir(res: Resultado, salida=sys.stdout) -> None:
         print(n("  Un archivo grande es justo donde cabe un padrón entero. "
                 "Revísalos aparte.", "gris"), file=salida)
 
+    if res.exenciones_muertas:
+        print(file=salida)
+        print(n("! Exenciones que no aplicaron a ningún archivo:", "amarillo"),
+              file=salida)
+        for patron in res.exenciones_muertas:
+            print(n(f"    {patron}", "gris"), file=salida)
+        print(n("  El archivo se renombró o se borró. Si se renombró, lleva "
+                "revisándose sin exención\n  desde entonces; si se borró, la "
+                "regla esconfiguración muerta. Actualiza .garita.yml.", "gris"),
+              file=salida)
+
     if not res.hallazgos:
         print(n("✓ Garita: nada que reportar.", "verde"), file=salida)
         print(n(f"  {res.archivos_revisados} archivos revisados, "
