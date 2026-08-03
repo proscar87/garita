@@ -58,6 +58,20 @@ def repo_temporal(archivos: dict[str, str]) -> TemporaryDirectory:
     return td
 
 
+def correr_garita(raiz, *argv):
+    """Corre garita como la corre el usuario: desde dentro del repo, leyendo
+    lo que imprime y quedándose con el código de salida."""
+    antes = Path.cwd()
+    os.chdir(raiz)
+    try:
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            codigo = garita_main(list(argv))
+        return codigo, buf.getvalue()
+    finally:
+        os.chdir(antes)
+
+
 class Secretos(unittest.TestCase):
     def detecta(self, texto: str) -> bool:
         return bool(list(buscar(texto, "f.py")))
@@ -559,18 +573,7 @@ class LineaBaseDePuntaAPunta(unittest.TestCase):
     CURP_NUEVA = "CEDD850505MNELTN01"
 
     def _cli(self, raiz, *argv):
-        """Corre garita como la corre el usuario: desde dentro del repo,
-        leyendo lo que imprime y quedándose con el código de salida."""
-        antes = Path.cwd()
-        os.chdir(raiz)
-        try:
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf), \
-                    contextlib.redirect_stderr(buf):
-                codigo = garita_main(list(argv))
-            return codigo, buf.getvalue()
-        finally:
-            os.chdir(antes)
+        return correr_garita(raiz, *argv)
 
     def test_congelar_sale_cero_aunque_haya_hallazgos(self):
         # Está registrando deuda, no reprobando. Y dice cuánto congeló,
@@ -696,3 +699,118 @@ class LineaBaseDePuntaAPunta(unittest.TestCase):
             raiz = Path(td.name)
             codigo, salida = self._cli(raiz, "--linea-base", "datos.csv")
             self.assertEqual(codigo, 2, salida)
+
+
+class SalidaSarif(unittest.TestCase):
+    """El formato que GitHub convierte en alertas de code scanning.
+
+    No hay validador de esquema porque el repo no tiene dependencias y así
+    se queda: se verifica a mano la estructura que la subida a GitHub
+    rechaza cuando falta, que es lo que de verdad muerde."""
+
+    CURP = "AABB900101HDFCDF09"
+    OTRA = "CEDD850505MNELTN01"
+
+    def _sarif(self, raiz, *argv):
+        codigo, salida = correr_garita(raiz, "--formato", "sarif", *argv)
+        return codigo, json.loads(salida)
+
+    def test_estructura_que_github_exige(self):
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP}\n"})
+        with td:
+            codigo, doc = self._sarif(Path(td.name))
+            self.assertEqual(codigo, 1)  # el formato no cambia el veredicto
+            self.assertEqual(doc["version"], "2.1.0")
+            self.assertIn("sarif-2.1.0", doc["$schema"])
+            run = doc["runs"][0]
+            self.assertEqual(run["tool"]["driver"]["name"], "Garita")
+            ids = {r["id"] for r in run["tool"]["driver"]["rules"]}
+            for res in run["results"]:
+                self.assertIn(res["ruleId"], ids)
+                self.assertIn(res["level"], ("error", "warning", "note"))
+                loc = res["locations"][0]["physicalLocation"]
+                self.assertEqual(loc["artifactLocation"]["uri"], "datos.csv")
+                self.assertEqual(loc["region"]["startLine"], 1)
+
+    def test_ruleid_por_detector_no_por_hallazgo(self):
+        # GitHub agrupa por regla; un ruleId por hallazgo llena la pestaña
+        # de reglas de un solo uso.
+        td = repo_temporal({
+            "a.csv": f"curp: {self.CURP}\n",
+            "b.csv": f"curp: {self.OTRA}\n",
+        })
+        with td:
+            _, doc = self._sarif(Path(td.name))
+            resultados = doc["runs"][0]["results"]
+            self.assertEqual(len(resultados), 2)
+            self.assertEqual({r["ruleId"] for r in resultados}, {"curp"})
+
+    def test_ningun_valor_completo_en_el_documento(self):
+        # El texto de una alerta lo ve más gente que el repositorio.
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP}\n"})
+        with td:
+            _, salida = correr_garita(Path(td.name), "--formato", "sarif")
+            self.assertNotIn(self.CURP, salida)
+            for i in range(len(self.CURP) - 5):
+                self.assertNotIn(self.CURP[i:i + 6], salida)
+
+    def test_la_huella_sigue_al_hallazgo_cuando_se_mueven_lineas(self):
+        # partialFingerprints existe exactamente para esto. Y aplica la
+        # misma regla que la línea base: nada derivado del valor.
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP}\n"})
+        with td:
+            raiz = Path(td.name)
+            _, doc1 = self._sarif(raiz)
+            (raiz / "datos.csv").write_text(
+                f"\n\n\n\ncurp: {self.CURP}\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            _, doc2 = self._sarif(raiz)
+            huella = lambda d: d["runs"][0]["results"][0]["partialFingerprints"]
+            self.assertEqual(huella(doc1), huella(doc2))
+            self.assertNotEqual(
+                doc1["runs"][0]["results"][0]["locations"],
+                doc2["runs"][0]["results"][0]["locations"])
+
+    def test_deuda_aceptada_sale_como_note(self):
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP}\n"})
+        with td:
+            raiz = Path(td.name)
+            correr_garita(raiz, "--linea-base")
+            codigo, doc = self._sarif(raiz)
+            self.assertEqual(codigo, 0)
+            r = doc["runs"][0]["results"][0]
+            self.assertEqual(r["level"], "note")
+            self.assertIn("deuda aceptada", r["message"]["text"])
+
+    def test_salida_escribe_el_archivo_y_la_consola_queda_humana(self):
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP}\n"})
+        with td:
+            raiz = Path(td.name)
+            codigo, salida = correr_garita(
+                raiz, "--formato", "sarif", "--salida", "reporte.sarif")
+            self.assertEqual(codigo, 1)
+            doc = json.loads((raiz / "reporte.sarif").read_text(encoding="utf-8"))
+            self.assertEqual(doc["version"], "2.1.0")
+            self.assertIn("datos.csv", salida)  # el reporte humano sigue
+
+    def test_en_github_stdout_sigue_siendo_json_puro(self):
+        # Las anotaciones ::error irían al mismo stdout que el documento y
+        # lo corromperían.
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP}\n"})
+        with td:
+            antes = os.environ.get("GITHUB_ACTIONS")
+            os.environ["GITHUB_ACTIONS"] = "true"
+            try:
+                _, salida = correr_garita(Path(td.name), "--formato", "sarif")
+                json.loads(salida)  # truena si algo más se coló
+            finally:
+                if antes is None:
+                    del os.environ["GITHUB_ACTIONS"]
+                else:
+                    os.environ["GITHUB_ACTIONS"] = antes
+
+    def test_salida_sin_sarif_es_error_de_uso(self):
+        td = repo_temporal({"x.py": "x = 1\n"})
+        with td:
+            codigo, _ = correr_garita(Path(td.name), "--salida", "r.txt")
+            self.assertEqual(codigo, 2)

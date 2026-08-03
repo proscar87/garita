@@ -157,6 +157,32 @@ complementan; ninguna sustituye a la otra.
 Probada en `ubuntu-latest` y `macos-latest`. En runners de Windows agrega
 `actions/setup-python@v5` antes: `python3` no siempre existe ahí.
 
+#### Con alertas en la pestaña Security (SARIF)
+
+Un hallazgo impreso en el registro de la corrida muere ahí: casi nadie abre
+los registros. Con `--formato sarif`, GitHub lo convierte en una alerta de
+code scanning — con historial y estado propio por hallazgo:
+
+```yaml
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx run garita --formato sarif --salida garita.sarif
+        continue-on-error: true
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: garita.sarif
+```
+
+El documento SARIF respeta las mismas dos reglas que todo lo demás: ningún
+valor completo en los mensajes, y nada derivado del valor en las huellas que
+GitHub usa para seguir un hallazgo entre corridas. La deuda aceptada por la
+línea base aparece como `note`, no como error.
+
 ### Como comando
 
 ```bash

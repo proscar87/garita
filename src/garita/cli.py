@@ -18,6 +18,7 @@ está en un commit y hay que reescribir historia.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from datetime import date
@@ -35,6 +36,7 @@ from .linea_base import (
 )
 from .nucleo import revisar
 from .reporte import anotaciones_github, imprimir, resumen_markdown
+from .sarif import generar as generar_sarif
 
 
 def raiz_repo(desde: Path) -> Path:
@@ -78,9 +80,22 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--linea-base-ruta", metavar="RUTA",
                    help=f"dónde vive la línea base (por omisión, "
                         f"{NOMBRE_POR_OMISION} en la raíz del repositorio)")
+    p.add_argument("--formato", choices=("humano", "sarif"), default="humano",
+                   help="sarif produce el formato que GitHub ingiere como "
+                        "alertas de code scanning (por omisión, humano)")
+    p.add_argument("--salida", metavar="RUTA",
+                   help="con --formato sarif, escribe el documento ahí en "
+                        "vez de stdout")
     p.add_argument("--sin-color", action="store_true")
     p.add_argument("--version", action="version", version=f"garita {__version__}")
     args = p.parse_args(argv)
+
+    if args.salida and args.formato != "sarif":
+        # Callar el reporte humano hacia un archivo no tiene caso de uso;
+        # aceptar la bandera y sorprender después es peor que rechazarla.
+        print("Garita: --salida sólo aplica con --formato sarif.",
+              file=sys.stderr)
+        return 2
 
     raiz = raiz_repo(Path.cwd())
 
@@ -160,9 +175,25 @@ def main(argv: list[str] | None = None) -> int:
     else:
         nuevos, conocidos, pagadas = list(res.hallazgos), [], []
 
-    imprimir(res, base=base, nuevos=nuevos, conocidos=conocidos,
-             pagadas=pagadas)
-    anotaciones_github(res, conocidos=conocidos)
+    if args.formato == "sarif":
+        documento = json.dumps(generar_sarif(res, detectores,
+                                             conocidos=conocidos),
+                               indent=2, ensure_ascii=False) + "\n"
+        if args.salida:
+            Path(args.salida).write_text(documento, encoding="utf-8")
+            # El SARIF ya quedó en su archivo; la consola sigue siendo para
+            # humanos.
+            imprimir(res, base=base, nuevos=nuevos, conocidos=conocidos,
+                     pagadas=pagadas)
+            anotaciones_github(res, conocidos=conocidos)
+        else:
+            # stdout ES el documento: cualquier otra cosa ahí —reporte,
+            # anotaciones— lo corrompería.
+            sys.stdout.write(documento)
+    else:
+        imprimir(res, base=base, nuevos=nuevos, conocidos=conocidos,
+                 pagadas=pagadas)
+        anotaciones_github(res, conocidos=conocidos)
 
     resumen = os.environ.get("GITHUB_STEP_SUMMARY")
     if resumen:
