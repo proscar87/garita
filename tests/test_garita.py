@@ -814,3 +814,118 @@ class SalidaSarif(unittest.TestCase):
         with td:
             codigo, _ = correr_garita(Path(td.name), "--salida", "r.txt")
             self.assertEqual(codigo, 2)
+
+
+def _cargar_ejecutar():
+    """El envoltorio de la Action no es un paquete; se carga por ruta."""
+    import importlib.util
+    ruta = AQUI.parent / "scripts" / "ejecutar.py"
+    spec = importlib.util.spec_from_file_location("ejecutar", ruta)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class SoloCambios(unittest.TestCase):
+    """El modo que más gente va a usar en un pull request y que hasta ahora
+    era una promesa sin respaldo: `action.yml` exponía el input sin una sola
+    prueba."""
+
+    CURP = "AABB900101HDFCDF09"
+    GIT = ["git", "-c", "user.name=prueba", "-c", "user.email=p@ej.mx"]
+
+    def _pr(self, en_main: dict, cambios_en_pr):
+        """Un origen con rama main y un clon con rama de pull request.
+
+        Devuelve (TemporaryDirectory, ruta_del_clon). `cambios_en_pr` es una
+        función que recibe la raíz del clon y hace ahí lo que haría el PR.
+        """
+        td = TemporaryDirectory()
+        base = Path(td.name)
+        origen = base / "origen"
+        origen.mkdir()
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=origen, check=True)
+        for rel, contenido in en_main.items():
+            p = origen / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(contenido, encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=origen, check=True)
+        subprocess.run(self.GIT + ["commit", "-q", "-m", "main"],
+                       cwd=origen, check=True)
+        clon = base / "clon"
+        subprocess.run(["git", "clone", "-q", str(origen), str(clon)], check=True)
+        subprocess.run(["git", "checkout", "-q", "-b", "pr"], cwd=clon, check=True)
+        cambios_en_pr(clon)
+        subprocess.run(["git", "add", "-A"], cwd=clon, check=True)
+        subprocess.run(self.GIT + ["commit", "-q", "-m", "pr"],
+                       cwd=clon, check=True)
+        return td, clon
+
+    def _archivos_del_pr(self, clon):
+        ejecutar = _cargar_ejecutar()
+        antes = Path.cwd()
+        os.chdir(clon)
+        try:
+            return ejecutar.archivos_del_pr({"GITHUB_BASE_REF": "main"})
+        finally:
+            os.chdir(antes)
+
+    def test_solo_revisa_los_archivos_del_diff(self):
+        def pr(clon):
+            (clon / "limpio.py").write_text("y = 2\n", encoding="utf-8")
+            (clon / "nuevo.md").write_text("hola\n", encoding="utf-8")
+        td, clon = self._pr({"limpio.py": "x = 1\n", "otro.py": "z = 3\n"}, pr)
+        with td:
+            self.assertEqual(set(self._archivos_del_pr(clon)),
+                             {"limpio.py", "nuevo.md"})
+
+    def test_hallazgo_en_archivo_no_tocado_no_truena_el_build(self):
+        # La promesa central del modo: el PR que no tocó la deuda vieja no
+        # carga con ella. (Y su costo, documentado: es ciego a lo que ya
+        # estaba — por eso se usa junto a una revisión completa.)
+        def pr(clon):
+            (clon / "limpio.py").write_text("y = 2\n", encoding="utf-8")
+        td, clon = self._pr(
+            {"limpio.py": "x = 1\n", "sucio.csv": f"curp: {self.CURP}\n"}, pr)
+        with td:
+            cambios = self._archivos_del_pr(clon)
+            self.assertEqual(cambios, ["limpio.py"])
+            codigo, salida = correr_garita(clon, *cambios)
+            self.assertEqual(codigo, 0, salida)
+            codigo, _ = correr_garita(clon)   # la revisión completa sí lo ve
+            self.assertEqual(codigo, 1)
+
+    def test_archivo_renombrado_se_revisa_por_su_ruta_nueva(self):
+        def pr(clon):
+            (clon / "datos").mkdir()
+            subprocess.run(["git", "mv", "viejo.csv", "datos/renombrado.csv"],
+                           cwd=clon, check=True)
+        td, clon = self._pr({"viejo.csv": f"curp: {self.CURP}\n"}, pr)
+        with td:
+            cambios = self._archivos_del_pr(clon)
+            self.assertEqual(cambios, ["datos/renombrado.csv"])
+            codigo, salida = correr_garita(clon, *cambios)
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("datos/renombrado.csv", salida)
+
+    def test_solo_cambios_no_pisa_el_config(self):
+        # Regresión: `argv = cambios` tiraba el `--config` ya acumulado y la
+        # opción documentada volvía a ser inoperante, ahora en modo
+        # solo-cambios.
+        def pr(clon):
+            (clon / "limpio.py").write_text("y = 2\n", encoding="utf-8")
+        td, clon = self._pr({"limpio.py": "x = 1\n"}, pr)
+        with td:
+            ejecutar = _cargar_ejecutar()
+            antes = Path.cwd()
+            os.chdir(clon)
+            try:
+                argv = ejecutar.argumentos({
+                    "GITHUB_BASE_REF": "main",
+                    "GARITA_CONFIG": "otra.yml",
+                    "GARITA_SOLO_CAMBIOS": "true",
+                })
+            finally:
+                os.chdir(antes)
+            self.assertEqual(argv[:2], ["--config", "otra.yml"])
+            self.assertIn("limpio.py", argv)
