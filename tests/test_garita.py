@@ -18,6 +18,10 @@ apretar el patrón de JWT.
 """
 from __future__ import annotations
 
+import contextlib
+import io
+import json
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -37,6 +41,7 @@ from garita.fuentes import FuenteInvalida, a_patron, cargar        # noqa: E402
 from garita.detectores.paises.mx import (                             # noqa: E402
     clabe_valida, curp_valido, nss_valido, rfc_valido,
 )
+from garita.cli import main as garita_main                         # noqa: E402
 from garita.nucleo import Exencion, revisar                        # noqa: E402
 
 
@@ -539,3 +544,155 @@ class ExencionesMuertas(unittest.TestCase):
             (raiz / "b.py").write_text("y = 2\n", encoding="utf-8")
             res = revisar(raiz, [], [Exencion("b.py", "m", ())], archivos=["a.py"])
             self.assertEqual(res.exenciones_muertas, [])
+
+
+class LineaBaseDePuntaAPunta(unittest.TestCase):
+    """El modo de adopción: congelar lo que ya estaba y fallar sólo con lo
+    nuevo. Se prueba por el CLI porque las promesas de la línea base son
+    promesas sobre códigos de salida, y un código de salida sólo se prueba
+    de verdad recorriendo el camino completo."""
+
+    # Claves sintéticas con dígito verificador correcto, no personas. Los
+    # vectores oficiales (HEGG…, SASO…, ZUNA…) no sirven aquí: el detector
+    # los exenta por ser las claves de muestra de RENAPO.
+    CURP_VIEJA = "AABB900101HDFCDF09"
+    CURP_NUEVA = "CEDD850505MNELTN01"
+
+    def _cli(self, raiz, *argv):
+        """Corre garita como la corre el usuario: desde dentro del repo,
+        leyendo lo que imprime y quedándose con el código de salida."""
+        antes = Path.cwd()
+        os.chdir(raiz)
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf), \
+                    contextlib.redirect_stderr(buf):
+                codigo = garita_main(list(argv))
+            return codigo, buf.getvalue()
+        finally:
+            os.chdir(antes)
+
+    def test_congelar_sale_cero_aunque_haya_hallazgos(self):
+        # Está registrando deuda, no reprobando. Y dice cuánto congeló,
+        # porque alguien tiene que ver el tamaño de lo que acaba de aceptar.
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP_VIEJA}\n"})
+        with td:
+            raiz = Path(td.name)
+            codigo, salida = self._cli(raiz, "--linea-base")
+            self.assertEqual(codigo, 0, salida)
+            self.assertIn("1 hallazgo", salida)
+            self.assertTrue((raiz / ".garita-base.json").is_file())
+
+    def test_congelado_no_reprueba_pero_tampoco_desaparece(self):
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP_VIEJA}\n"})
+        with td:
+            raiz = Path(td.name)
+            self._cli(raiz, "--linea-base")
+            codigo, salida = self._cli(raiz)
+            self.assertEqual(codigo, 0, salida)
+            # «Nada que reportar» a secas sería mentir por omisión.
+            self.assertIn("nada nuevo", salida.lower())
+            self.assertIn("Deuda aceptada", salida)
+            self.assertIn("datos.csv", salida)
+
+    def test_hallazgo_nuevo_reprueba_y_solo_el_nuevo_es_error(self):
+        td = repo_temporal({"viejo.csv": f"curp: {self.CURP_VIEJA}\n"})
+        with td:
+            raiz = Path(td.name)
+            self._cli(raiz, "--linea-base")
+            (raiz / "nuevo.csv").write_text(
+                f"curp: {self.CURP_NUEVA}\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = self._cli(raiz)
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("1 error", salida)
+            self.assertIn("nuevo.csv", salida)
+            # El viejo sigue visible, pero como deuda, no como error.
+            self.assertIn("Deuda aceptada", salida)
+
+    def test_deuda_pagada_se_reporta_como_obsoleta(self):
+        td = repo_temporal({
+            "viejo.csv": f"curp: {self.CURP_VIEJA}\n",
+            "otro.csv": f"curp: {self.CURP_NUEVA}\n",
+        })
+        with td:
+            raiz = Path(td.name)
+            self._cli(raiz, "--linea-base")
+            (raiz / "viejo.csv").unlink()
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = self._cli(raiz)
+            self.assertEqual(codigo, 0, salida)
+            self.assertIn("Deuda pagada", salida)
+            self.assertIn("viejo.csv", salida)
+
+    def test_archivos_sueltos_no_acusan_deuda_pagada(self):
+        # En el hook de pre-commit sólo llegan los archivos en preparación:
+        # que la deuda de otro archivo no aparezca ahí no dice que se pagó.
+        td = repo_temporal({
+            "viejo.csv": f"curp: {self.CURP_VIEJA}\n",
+            "limpio.py": "x = 1\n",
+        })
+        with td:
+            raiz = Path(td.name)
+            self._cli(raiz, "--linea-base")
+            codigo, salida = self._cli(raiz, "limpio.py")
+            self.assertEqual(codigo, 0, salida)
+            self.assertNotIn("Deuda pagada", salida)
+
+    def test_archivo_roto_es_codigo_2_no_0_ni_1(self):
+        td = repo_temporal({"x.py": "x = 1\n"})
+        with td:
+            raiz = Path(td.name)
+            (raiz / ".garita-base.json").write_text("{ roto", encoding="utf-8")
+            codigo, salida = self._cli(raiz)
+            self.assertEqual(codigo, 2, salida)
+
+    def test_formato_ajeno_es_codigo_2_y_dice_como_regenerar(self):
+        td = repo_temporal({"x.py": "x = 1\n"})
+        with td:
+            raiz = Path(td.name)
+            (raiz / ".garita-base.json").write_text(
+                json.dumps({"formato": 99, "conteos": {}}), encoding="utf-8")
+            codigo, salida = self._cli(raiz)
+            self.assertEqual(codigo, 2, salida)
+            self.assertIn("--linea-base", salida)
+
+    def test_sin_linea_base_audita_de_verdad(self):
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP_VIEJA}\n"})
+        with td:
+            raiz = Path(td.name)
+            self._cli(raiz, "--linea-base")
+            codigo, salida = self._cli(raiz, "--sin-linea-base")
+            self.assertEqual(codigo, 1, salida)
+
+    def test_el_archivo_generado_no_contiene_el_valor(self):
+        """La prueba que impide que alguien «optimice» el formato guardando
+        hashes sin leer por qué no: un hash de CURP es un CURP con candado
+        de juguete. Ni el valor ni NINGUNA subcadena suya pueden quedar en
+        un archivo que se commitea."""
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP_VIEJA}\n"})
+        with td:
+            raiz = Path(td.name)
+            self._cli(raiz, "--linea-base")
+            contenido = (raiz / ".garita-base.json").read_text(encoding="utf-8")
+            self.assertNotIn(self.CURP_VIEJA, contenido)
+            for i in range(len(self.CURP_VIEJA) - 5):
+                pedazo = self.CURP_VIEJA[i:i + 6]
+                self.assertNotIn(pedazo, contenido, pedazo)
+
+    def test_congelar_repo_limpio_no_escribe_archivo(self):
+        td = repo_temporal({"x.py": "x = 1\n"})
+        with td:
+            raiz = Path(td.name)
+            codigo, salida = self._cli(raiz, "--linea-base")
+            self.assertEqual(codigo, 0, salida)
+            self.assertFalse((raiz / ".garita-base.json").exists())
+
+    def test_congelar_no_admite_archivos_sueltos(self):
+        # Una línea base parcial perdonaría de menos: reprobaría deuda que
+        # sí se aceptó en cuanto se revisara el repo completo.
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP_VIEJA}\n"})
+        with td:
+            raiz = Path(td.name)
+            codigo, salida = self._cli(raiz, "--linea-base", "datos.csv")
+            self.assertEqual(codigo, 2, salida)

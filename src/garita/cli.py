@@ -20,12 +20,19 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 from . import __version__
 from .config import Config, ConfigInvalida, cargar as cargar_config
 from .detectores import construir
 from .fuentes import FuenteInvalida
+from .linea_base import (
+    LineaBaseInvalida, NOMBRE_POR_OMISION,
+    cargar as cargar_linea_base,
+    construir as construir_linea_base,
+    guardar as guardar_linea_base,
+)
 from .nucleo import revisar
 from .reporte import anotaciones_github, imprimir, resumen_markdown
 
@@ -61,6 +68,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--explicar", action="store_true",
                    help="muestra qué se va a revisar y con qué configuración, "
                         "sin revisar")
+    lb = p.add_mutually_exclusive_group()
+    lb.add_argument("--linea-base", action="store_true",
+                    help="congela los hallazgos actuales como deuda aceptada; "
+                         "las corridas siguientes fallan sólo con lo nuevo")
+    lb.add_argument("--sin-linea-base", action="store_true",
+                    help="ignora la línea base aunque exista, para auditar "
+                         "de verdad")
+    p.add_argument("--linea-base-ruta", metavar="RUTA",
+                   help=f"dónde vive la línea base (por omisión, "
+                        f"{NOMBRE_POR_OMISION} en la raíz del repositorio)")
     p.add_argument("--sin-color", action="store_true")
     p.add_argument("--version", action="version", version=f"garita {__version__}")
     args = p.parse_args(argv)
@@ -104,23 +121,91 @@ def main(argv: list[str] | None = None) -> int:
     if args.explicar:
         return _explicar(cfg, detectores, raiz)
 
+    ruta_lb = (Path(args.linea_base_ruta) if args.linea_base_ruta
+               else raiz / NOMBRE_POR_OMISION)
+
+    if args.linea_base:
+        return _congelar(args, cfg, detectores, raiz, ruta_lb)
+
+    base = None
+    if not args.sin_linea_base:
+        if args.linea_base_ruta and not ruta_lb.is_file():
+            # Igual que con --config: correr sin la línea base que se pidió
+            # marcaría en rojo toda la deuda ya aceptada, y ese reporte
+            # inservible se atendería como si fuera cierto.
+            print(f"Garita: no existe la línea base «{args.linea_base_ruta}». "
+                  f"No se continúa sin ella.", file=sys.stderr)
+            return 2
+        try:
+            base = cargar_linea_base(ruta_lb)
+        except LineaBaseInvalida as e:
+            # Código 2, nunca 1 y nunca seguir: sin ella todo lo aceptado
+            # saldría en rojo; con la que se creyó leer, lo nuevo saldría
+            # aprobado. Ninguna de las dos se vale.
+            print(f"Garita: la línea base existe pero no se pudo usar.\n"
+                  f"  {e}", file=sys.stderr)
+            return 2
+
     res = revisar(
         raiz, detectores, cfg.exenciones,
         archivos=args.archivos or None,
     )
 
-    imprimir(res)
-    anotaciones_github(res)
+    if base is not None:
+        nuevos, conocidos = base.filtrar(res.hallazgos)
+        # Sobre archivos sueltos (pre-commit) no se acusa deuda pagada: las
+        # entradas de los archivos que no se revisaron parecerían pagadas
+        # sin estarlo.
+        pagadas = base.obsoletas(res.hallazgos) if not args.archivos else []
+    else:
+        nuevos, conocidos, pagadas = list(res.hallazgos), [], []
+
+    imprimir(res, base=base, nuevos=nuevos, conocidos=conocidos,
+             pagadas=pagadas)
+    anotaciones_github(res, conocidos=conocidos)
 
     resumen = os.environ.get("GITHUB_STEP_SUMMARY")
     if resumen:
         with open(resumen, "a", encoding="utf-8") as f:
-            f.write(resumen_markdown(res))
+            f.write(resumen_markdown(res, base=base, nuevos=nuevos,
+                                     conocidos=conocidos))
 
-    if res.errores:
+    # Sólo lo nuevo decide el código de salida; la deuda aceptada ya se
+    # imprimió aparte y no reprueba.
+    if any(h.severidad == "error" for h in nuevos):
         return 1
-    if res.avisos and cfg.fallar_en_aviso:
+    if cfg.fallar_en_aviso and any(h.severidad == "aviso" for h in nuevos):
         return 1
+    return 0
+
+
+def _congelar(args, cfg, detectores, raiz: Path, ruta_lb: Path) -> int:
+    """Escribe la línea base. Sale 0 aunque haya 400 hallazgos: está
+    registrando deuda, no reprobando."""
+    if args.archivos:
+        print("Garita: --linea-base congela el repositorio completo, no "
+              "archivos sueltos. Una línea base parcial perdonaría de menos "
+              "y reprobaría deuda que sí se aceptó.", file=sys.stderr)
+        return 2
+
+    res = revisar(raiz, detectores, cfg.exenciones)
+    base = construir_linea_base(res.hallazgos, fecha=date.today().isoformat())
+
+    if base.total == 0:
+        print("Garita: nada que congelar — el repositorio está limpio.")
+        if ruta_lb.is_file():
+            print(f"  «{ruta_lb.name}» ya existe y toda su deuda está "
+                  f"pagada: bórralo.")
+        return 0
+
+    guardar_linea_base(base, ruta_lb)
+    # El tamaño se dice siempre: alguien tiene que ver cuánto acaba de
+    # aceptar.
+    print(f"Garita: {base.total} hallazgo{'s' if base.total != 1 else ''} "
+          f"congelado{'s' if base.total != 1 else ''} en «{ruta_lb.name}» "
+          f"como deuda aceptada.")
+    print("  Esto detiene la sangría, no paga la deuda. Commitea el archivo "
+          "y achícalo conforme limpies.")
     return 0
 
 

@@ -42,9 +42,18 @@ def _color(activo: bool):
     return lambda t, c: f"\033[{codigos.get(c, '0')}m{t}\033[0m"
 
 
-def imprimir(res: Resultado, salida=sys.stdout) -> None:
+def imprimir(res: Resultado, salida=None, base=None,
+             nuevos=None, conocidos=None, pagadas=None) -> None:
+    # sys.stdout se resuelve al llamar, no al importar: un default evaluado
+    # en el import ignora las redirecciones (contextlib.redirect_stdout).
+    salida = salida if salida is not None else sys.stdout
     color = _color(salida.isatty() and not _en_github())
     n = color
+
+    # Sin línea base, todo hallazgo es nuevo y el reporte queda como siempre.
+    if nuevos is None:
+        nuevos = res.hallazgos
+    conocidos = conocidos or []
 
     # Los archivos que se saltaron por tamaño se dicen SIEMPRE, haya o no
     # hallazgos. Un volcado grande omitido en silencio es una marca verde sin
@@ -71,8 +80,13 @@ def imprimir(res: Resultado, salida=sys.stdout) -> None:
                 "regla esconfiguración muerta. Actualiza .garita.yml.", "gris"),
               file=salida)
 
-    if not res.hallazgos:
-        print(n("✓ Garita: nada que reportar.", "verde"), file=salida)
+    if not nuevos:
+        if conocidos:
+            # Todo lo encontrado quedó cubierto por la línea base. Decir
+            # «nada que reportar» a secas sería mentir por omisión.
+            print(n("✓ Garita: nada nuevo que reportar.", "verde"), file=salida)
+        else:
+            print(n("✓ Garita: nada que reportar.", "verde"), file=salida)
         print(n(f"  {res.archivos_revisados} archivos revisados, "
                 f"{res.archivos_omitidos} omitidos (binarios o muy grandes).",
                 "gris"), file=salida)
@@ -80,12 +94,13 @@ def imprimir(res: Resultado, salida=sys.stdout) -> None:
             total = sum(res.exentos_aplicados.values())
             print(n(f"  {total} revisiones omitidas por exenciones declaradas.",
                     "gris"), file=salida)
+        _bloque_linea_base(base, conocidos, pagadas, n, salida)
         return
 
     # Agrupado por archivo: quien va a arreglar abre un archivo a la vez, no
-    # un detector a la vez.
+    # un detector a la vez. Sólo lo nuevo; la deuda aceptada va aparte.
     por_archivo: dict[str, list] = defaultdict(list)
-    for h in res.hallazgos:
+    for h in nuevos:
         por_archivo[h.archivo].append(h)
 
     print(file=salida)
@@ -100,7 +115,8 @@ def imprimir(res: Resultado, salida=sys.stdout) -> None:
             print(f"      {n('→ ' + h.como_arreglar, 'gris')}", file=salida)
         print(file=salida)
 
-    e, a = len(res.errores), len(res.avisos)
+    e = sum(1 for h in nuevos if h.severidad == "error")
+    a = sum(1 for h in nuevos if h.severidad == "aviso")
     resumen = []
     if e:
         resumen.append(n(f"{e} error{'es' if e != 1 else ''}", "rojo"))
@@ -121,40 +137,115 @@ def imprimir(res: Resultado, salida=sys.stdout) -> None:
         print(n("  · Si el hallazgo es legítimo, exenta el archivo en "
                 ".garita.yml CON SU MOTIVO.", "gris"), file=salida)
 
+    _bloque_linea_base(base, conocidos, pagadas, n, salida)
 
-def anotaciones_github(res: Resultado, salida=sys.stdout) -> None:
+
+def _meses_desde(fecha_iso: str) -> int | None:
+    from datetime import date
+    try:
+        creada = date.fromisoformat(fecha_iso)
+    except ValueError:
+        return None
+    return (date.today() - creada).days // 30
+
+
+def _bloque_linea_base(base, conocidos, pagadas, n, salida) -> None:
+    """La deuda aceptada no desaparece del reporte: desaparecerla convertiría
+    la línea base en una alfombra. Se imprime aparte y en gris, y no decide
+    el código de salida.
+
+    `pagadas` la calcula quien sabe si la revisión fue completa: sobre
+    archivos sueltos (el hook de pre-commit) las entradas de los archivos no
+    revisados parecerían pagadas sin estarlo — la misma trampa que las
+    exenciones muertas."""
+    if base is None:
+        return
+
+    if conocidos:
+        print(file=salida)
+        print(n(f"Deuda aceptada — línea base del {base.creada}, "
+                f"{len(conocidos)} hallazgo"
+                f"{'s' if len(conocidos) != 1 else ''}:", "gris"), file=salida)
+        for h in conocidos[:20]:
+            print(n(f"    {h.archivo} · línea {h.linea} · {h.detector}",
+                    "gris"), file=salida)
+        if len(conocidos) > 20:
+            print(n(f"    …y {len(conocidos) - 20} más (corre con "
+                    f"--sin-linea-base para verlos todos)", "gris"),
+                  file=salida)
+
+    meses = _meses_desde(base.creada)
+    if meses is not None and meses >= 6:
+        # Una línea base es una promesa de limpiar después, y las promesas
+        # sin fecha no se cumplen. Ésta ya tiene fecha, y ya venció.
+        print(n(f"  ! Esta línea base tiene {meses} meses. Ya toca pagar la "
+                f"deuda o volver a justificarla.", "amarillo"), file=salida)
+
+    if pagadas:
+        print(file=salida)
+        print(n("Deuda pagada — entradas de la línea base que ya no "
+                "corresponden a nada:", "verde"), file=salida)
+        for entrada in pagadas[:10]:
+            print(n(f"    {entrada}", "gris"), file=salida)
+        if len(pagadas) > 10:
+            print(n(f"    …y {len(pagadas) - 10} más", "gris"), file=salida)
+        print(n("  Regenera con «garita --linea-base» para achicar el "
+                "archivo.", "gris"), file=salida)
+
+
+def anotaciones_github(res: Resultado, salida=None, conocidos=()) -> None:
     """Marca las líneas en la interfaz de GitHub.
 
     Sin esto el hallazgo vive sólo en el registro de la ejecución, que casi
     nadie abre. Con esto aparece sobre la línea exacta en la pestaña de
     archivos del pull request, que es donde la persona ya está mirando.
     """
+    salida = salida if salida is not None else sys.stdout
     if not _en_github():
         return
+    # La deuda aceptada se anota como aviso informativo, no como error: la
+    # línea sigue marcada donde la persona ya está mirando, pero sin gritar
+    # por algo que el equipo ya aceptó.
+    aceptados = {id(h) for h in conocidos}
     for h in res.hallazgos:
-        tipo = "error" if h.severidad == "error" else "warning"
+        if id(h) in aceptados:
+            tipo, detalle = "notice", " (deuda aceptada)"
+        else:
+            tipo = "error" if h.severidad == "error" else "warning"
+            detalle = ""
         # Los saltos de línea rompen el formato de anotación; van como %0A.
         mensaje = f"{h.por_que} → {h.como_arreglar}".replace("\n", "%0A")
         print(f"::{tipo} file={h.archivo},line={h.linea},"
-              f"title=Garita: {h.detector}::{mensaje}", file=salida)
+              f"title=Garita: {h.detector}{detalle}::{mensaje}", file=salida)
 
 
-def resumen_markdown(res: Resultado) -> str:
+def resumen_markdown(res: Resultado, base=None, nuevos=None,
+                     conocidos=None) -> str:
     """Para el resumen del job, que es lo que se ve sin abrir los registros."""
-    if not res.hallazgos:
-        return (f"## ✅ Garita\n\nNada que reportar. "
-                f"{res.archivos_revisados} archivos revisados.\n")
+    if nuevos is None:
+        nuevos = res.hallazgos
+    conocidos = conocidos or []
+    deuda = (f" {len(conocidos)} hallazgo{'s' if len(conocidos) != 1 else ''} "
+             f"previo{'s' if len(conocidos) != 1 else ''} en deuda aceptada "
+             f"(línea base del {base.creada})." if conocidos else "")
+
+    if not nuevos:
+        titulo = "Nada nuevo que reportar." if conocidos else "Nada que reportar."
+        return (f"## ✅ Garita\n\n{titulo} "
+                f"{res.archivos_revisados} archivos revisados.{deuda}\n")
 
     lineas = ["## 🚧 Garita", ""]
-    e, a = len(res.errores), len(res.avisos)
+    e = sum(1 for h in nuevos if h.severidad == "error")
+    a = sum(1 for h in nuevos if h.severidad == "aviso")
     lineas.append(f"**{e} error{'es' if e != 1 else ''}**"
                   + (f" y {a} aviso{'s' if a != 1 else ''}" if a else "")
-                  + f" en {res.archivos_revisados} archivos revisados.")
+                  + f" en {res.archivos_revisados} archivos revisados."
+                  + deuda)
     lineas += ["", "| Archivo | Línea | Detector | Qué |", "|---|---:|---|---|"]
-    for h in res.hallazgos[:50]:
+    for h in nuevos[:50]:
         lineas.append(f"| `{h.archivo}` | {h.linea} | {h.detector} | {h.que} |")
-    if len(res.hallazgos) > 50:
-        lineas.append(f"| … | | | {len(res.hallazgos) - 50} más |")
+    if len(nuevos) > 50:
+        lineas.append(f"| … | | | {len(nuevos) - 50} más |")
     lineas += ["", "Cada hallazgo trae su motivo y su arreglo en el registro "
                "completo de la ejecución."]
     return "\n".join(lineas) + "\n"

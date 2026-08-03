@@ -167,6 +167,39 @@ garita --explicar   # dice qué va a revisar y con qué configuración
 
 ---
 
+## ¿Tienes un repositorio con hallazgos previos? Así lo enciendes hoy
+
+El caso más común no es el repositorio nuevo: es el que lleva años acumulando.
+Enciendes Garita, salen cuarenta hallazgos, el build queda rojo y no puedes
+arreglarlos hoy. Sin ayuda, las salidas son escribir cuarenta exenciones a
+mano o apagar la herramienta — y casi siempre se apaga la herramienta.
+
+Para eso existe la línea base:
+
+```bash
+garita --linea-base   # congela lo que ya estaba; escribe .garita-base.json
+git add .garita-base.json && git commit -m "Enciende Garita con línea base"
+```
+
+A partir de ahí **CI falla sólo con lo nuevo**. La deuda vieja no desaparece
+del reporte: se imprime aparte, en gris, como deuda aceptada — con la fecha en
+que la aceptaste, porque una línea base es una promesa de limpiar después y
+las promesas sin fecha no se cumplen.
+
+Tres cosas que conviene saber:
+
+- **El archivo no contiene ningún dato.** Sólo cuántos hallazgos había por
+  archivo y detector. Ni valores ni hashes: un hash de CURP se revienta por
+  fuerza bruta, así que no se guarda ningún derivado del valor. Puedes
+  commitearlo tranquilo.
+- **La deuda se paga borrando.** Cuando limpies un archivo, Garita te avisa
+  que esa entrada quedó obsoleta; regenera con `garita --linea-base` para
+  achicar el archivo. La meta es que un día puedas borrarlo completo.
+- **Para auditar de verdad**, `garita --sin-linea-base` ignora el archivo y
+  reporta todo, incluido lo aceptado.
+
+---
+
 ## Configuración
 
 Todo es opcional salvo la lista de nombres. Sin `.garita.yml`, Garita revisa
@@ -341,6 +374,11 @@ repos:
 Hook first: if your only check is in CI, by the time it fails the data already
 lives in a commit — and the fix goes from "delete a line" to "rewrite history
 and notify everyone who cloned".
+
+**Existing repo with prior findings?** Run `garita --linea-base` to freeze
+them as accepted debt: CI then fails only on *new* findings, while old ones
+stay visible in the report. The baseline file stores only counts per file and
+detector — no values, no hashes — so it's safe to commit.
 
 Config, findings format and design rationale: see the Spanish sections above
 and [`docs/DISENO.md`](docs/DISENO.md). Built with
