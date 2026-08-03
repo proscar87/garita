@@ -78,12 +78,19 @@ def buscador(
     exentos: set[str] = frozenset(),
     contexto: re.Pattern[str] | None = None,
     exige_refuerzo: bool = False,
+    exige_contexto: bool = False,
 ):
     """Arma un buscador de línea con la política de refuerzo.
 
     `exige_refuerzo` marca los identificadores de un solo dígito verificador:
     además de validar, la coincidencia tiene que traer separadores o venir
     acompañada de una palabra que la nombre.
+
+    `exige_contexto` es el escalón de arriba, para identificadores SIN dígito
+    verificador (el SSN estadounidense): la validación estructural sola deja
+    pasar demasiado, así que la palabra que lo nombre es obligatoria — el
+    formato no basta, porque tres-dos-cuatro con guiones también es un
+    número de parte o un folio.
     """
     def buscar(texto: str, archivo: str) -> Iterator[Hallazgo]:
         for i, linea in enumerate(texto.splitlines(), 1):
@@ -94,6 +101,8 @@ def buscador(
                 if v in exentos or not validar(v):
                     continue
                 if dentro_de_un_numero(linea, m.start(), m.end()):
+                    continue
+                if exige_contexto and not hay_contexto:
                     continue
                 if exige_refuerzo:
                     # Un punto decimal no cuenta como formato de identificador:

@@ -1262,3 +1262,83 @@ class Clientes(unittest.TestCase):
             raiz = Path(td.name)
             res = self._revisa(raiz)
             self.assertEqual(res.hallazgos, [])
+
+
+class PaisesNuevos(unittest.TestCase):
+    """EE.UU., Canadá, Portugal y Uruguay. Cada validación contra su fuente
+    oficial; el SSN es el primer identificador SIN dígito verificador del
+    proyecto, y estrena la regla de contexto obligatorio."""
+
+    def _det(self, nombre):
+        from garita.detectores.paises import cargar
+        return {d.nombre: d for d in cargar(Config())}[nombre]
+
+    # ── SSN ──
+    def test_ssn_estructura_ssa(self):
+        from garita.detectores.paises.us import ssn_valido
+        self.assertTrue(ssn_valido("531882074"))
+        for malo in ("000882074", "666882074", "900882074",
+                     "531002074", "531880000"):
+            self.assertFalse(ssn_valido(malo), malo)
+
+    def test_ssn_exige_contexto_siempre(self):
+        # Sin verificador, el formato no basta: 3-2-4 con guiones también
+        # es un número de parte. La palabra que lo nombre es obligatoria.
+        d = self._det("ssn")
+        self.assertTrue(list(d.buscar("SSN: 531-88-2074", "x")))
+        self.assertFalse(list(d.buscar("parte 531-88-2074 agotada", "x")))
+
+    def test_ssn_el_de_la_cartera_de_woolworth_no_dispara(self):
+        d = self._det("ssn")
+        self.assertFalse(list(d.buscar("ssn de ejemplo: 078-05-1120", "x")))
+
+    # ── SIN ──
+    def test_sin_luhn_y_regiones(self):
+        from garita.detectores.paises.ca import sin_valido
+        self.assertTrue(sin_valido("730425618"))
+        self.assertFalse(sin_valido("730425619"))
+        # La CRA usa 046 454 286 de ejemplo PORQUE la región 0 no se asigna.
+        self.assertFalse(sin_valido("046454286"))
+        self.assertFalse(sin_valido("830425618"))
+
+    def test_sin_pelon_exige_que_lo_nombren(self):
+        d = self._det("sin_ca")
+        self.assertTrue(list(d.buscar("SIN 730 425 618", "x")))
+        self.assertFalse(list(d.buscar("folio=730425618", "x")))
+
+    # ── NIF ──
+    def test_nif_modulo_11(self):
+        from garita.detectores.paises.pt import nif_valido
+        self.assertTrue(nif_valido("203456785"))
+        self.assertFalse(nif_valido("203456784"))
+
+    def test_nif_placeholder_universal_exento(self):
+        d = self._det("nif_pt")
+        self.assertFalse(list(d.buscar("NIF: 123456789", "x")))
+        self.assertTrue(list(d.buscar("NIF: 203456785", "x")))
+
+    # ── CI Uruguay ──
+    def test_ci_digito_verificador(self):
+        from garita.detectores.paises.uy import ci_valida
+        self.assertTrue(ci_valida("47329580"))
+        self.assertFalse(ci_valida("47329581"))
+
+    def test_ci_formato_oficial_dispara_y_repetidos_no(self):
+        d = self._det("ci_uy")
+        self.assertTrue(list(d.buscar("cédula 4.732.958-0", "x")))
+        self.assertFalse(list(d.buscar("cédula 1.111.111-1", "x")))
+
+    def test_acotar_paises_sigue_funcionando(self):
+        from garita.detectores.paises import cargar
+        nombres = {d.nombre for d in cargar(Config(paises=["us", "uy"]))}
+        self.assertEqual(nombres, {"ssn", "ci_uy"})
+
+    def test_grupos_de_tres_digitos_no_son_identificadores(self):
+        # Los dos falsos que hugo destapó en la primera corrida: un slice
+        # de una plantilla valida como NIF y una ruta SVG de KaTeX pasa
+        # Luhn. El espacio como «formato» es señal demasiado débil para un
+        # solo dígito verificador; por eso SIN y NIF exigen contexto.
+        self.assertFalse(list(self._det("nif_pt").buscar(
+            "{{ $shades := slice 300 400 500 }}", "x")))
+        self.assertFalse(list(self._det("sin_ca").buscar(
+            "m8 0v40h399730v-40zm0 194v40h399730v-40zM399738 392l", "x")))
