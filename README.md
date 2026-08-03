@@ -201,6 +201,12 @@ nadie la busca.
   con más catálogo. Úsalos, y usa Garita para lo que ellos no ven: los nombres
   de *tu* padrón y los identificadores mexicanos.
 - **No manda nada a ningún servidor.** Todo corre local.
+- **No detecta identificación por agregación.** Garita busca lo que le
+  declaras y lo que tiene forma reconocible. No ve que «un condominio de 58
+  unidades en tal municipio» identifica un lugar concreto aunque no aparezca
+  ningún nombre. Eso lo tiene que ver una persona — y conviene revisar con
+  ese lente los README y los comentarios, que es donde el contexto se cuela.
+  *(Lo aprendimos publicando este mismo repositorio.)*
 
 ---
 
