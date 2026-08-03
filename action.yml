@@ -1,5 +1,5 @@
-name: 'Garita'
-description: 'Impide que datos personales y credenciales entren al repositorio. Detecta nombres de tu propio padrón, CURP, RFC, CLABE y secretos.'
+name: 'Garita PII Guard'
+description: 'Impide que datos personales y credenciales entren al repositorio: nombres de tu padrón, CURP, RFC, CLABE, NSS y secretos.'
 author: 'Oscar Pacheco (proscar87)'
 
 branding:

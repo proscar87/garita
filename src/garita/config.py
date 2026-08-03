@@ -45,6 +45,14 @@ class Config:
 
     exenciones: list[Exencion] = field(default_factory=list)
 
+    paises: list[str] = field(default_factory=list)
+    """Qué paquetes de identificadores cargar. Vacío = todos los disponibles.
+
+    Tenerlos todos encendidos por omisión casi no cuesta: un identificador con
+    dígito verificador no valida fuera de su país, así que no dispara. Y
+    evita que alguien se quede sin protección por no haber leído la
+    documentación."""
+
     fallar_en_aviso: bool = False
     """Por omisión los avisos no rompen el build. Quien quiera tolerancia
     cero lo enciende, pero no se le impone: un guardián que rompe el build
@@ -196,8 +204,14 @@ def cargar(raiz: Path) -> Config:
         detectores = tuple(d.strip() for d in str(dets).split(",") if d.strip())
         exenciones.append(Exencion(str(archivo), str(motivo), detectores))
 
+    paises = datos.get("paises", "")
+    if isinstance(paises, str):
+        paises = [p.strip() for p in paises.split(",") if p.strip()]
+    paises = [str(p).strip() for p in paises if str(p).strip()]
+
     return Config(
         fuentes_nombres=fuentes,
+        paises=paises,
         detectores={k: bool(v) for k, v in _a_mapa(datos.get("detectores", [])).items()},
         exenciones=exenciones,
         fallar_en_aviso=bool(datos.get("fallar_en_aviso", False)),

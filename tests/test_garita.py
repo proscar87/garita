@@ -31,7 +31,7 @@ from garita.config import ConfigInvalida, cargar as cargar_config  # noqa: E402
 from garita.detectores import construir                            # noqa: E402
 from garita.detectores.secretos import buscar, buscar_asignaciones # noqa: E402
 from garita.fuentes import FuenteInvalida, a_patron, cargar        # noqa: E402
-from garita.detectores.mexico import (                             # noqa: E402
+from garita.detectores.paises.mx import (                             # noqa: E402
     clabe_valida, curp_valido, nss_valido, rfc_valido,
 )
 from garita.nucleo import Exencion, revisar                        # noqa: E402
@@ -222,7 +222,7 @@ class IdentificadoresMexicanos(unittest.TestCase):
     # ── Evasiones que se encontraron probando ──────────────────────────────
 
     def _det(self, nombre):
-        from garita.detectores.mexico import detectores
+        from garita.detectores.paises.mx import detectores
         from garita.config import Config
         return {d.nombre: d for d in detectores(Config())}[nombre]
 

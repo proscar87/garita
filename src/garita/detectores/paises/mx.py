@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Identificadores mexicanos: CURP, RFC, CLABE, NSS y teléfono.
+México: CURP, RFC, CLABE, NSS y teléfono.
 
 POR QUÉ ESTO NO EXISTE EN OTRAS HERRAMIENTAS
 
@@ -31,8 +31,8 @@ from __future__ import annotations
 import re
 from typing import Iterator
 
-from ..config import Config
-from ..nucleo import Detector, Hallazgo
+from ...config import Config
+from ...nucleo import Detector, Hallazgo
 
 
 # ── CURP ───────────────────────────────────────────────────────────────────

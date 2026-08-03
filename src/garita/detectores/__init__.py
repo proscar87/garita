@@ -70,11 +70,8 @@ def construir(cfg: Config, raiz: Path) -> list[Detector]:
             buscar=secretos.buscar_asignaciones,
         ))
 
-    # Los identificadores mexicanos viven en su propio módulo.
-    try:
-        from . import mexico
-        dets.extend(mexico.detectores(cfg))
-    except ImportError:
-        pass
+    # Los identificadores oficiales viven en `paises/`, uno por país.
+    from .paises import cargar as cargar_paises
+    dets.extend(cargar_paises(cfg))
 
     return dets

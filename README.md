@@ -4,7 +4,12 @@
 Nombres de tu propio padrón, CURP, RFC, CLABE, NSS, teléfonos mexicanos y
 secretos — como hook de `pre-commit` y como GitHub Action.
 
-[English below](#english) · MIT · Sin dependencias · Python ≥ 3.9
+[![CI](https://github.com/proscar87/garita/actions/workflows/ci.yml/badge.svg)](https://github.com/proscar87/garita/actions/workflows/ci.yml)
+[![MIT](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-%E2%89%A53.9-blue)
+![Sin dependencias](https://img.shields.io/badge/dependencias-0-green)
+
+[English below](#english)
 
 ---
 
@@ -79,6 +84,27 @@ guardián se entera solo.
 
 ---
 
+## ¿Tu país no está?
+
+Los identificadores oficiales viven en `detectores/paises/`, **un archivo por
+país**. Hoy está México; agregar otro es un archivo, no una rama — comparten
+motor, exenciones y pruebas, así que un arreglo llega a todos el mismo día.
+
+```yaml
+paises: mx, co     # por omisión: todos los disponibles
+```
+
+Tenerlos todos encendidos casi no cuesta: un identificador con dígito
+verificador no valida fuera de su país, así que no dispara.
+
+**[`docs/AGREGAR_PAIS.md`](docs/AGREGAR_PAIS.md) explica cómo agregar el
+tuyo.** La única regla dura: sólo se acepta un identificador si su validación
+se puede verificar contra una fuente oficial. Un detector que sólo mira la
+forma produce ruido, y el ruido es lo que enseña a la gente a ignorar al
+guardián.
+
+---
+
 ## Instalación
 
 ### Como hook de pre-commit — **empieza por aquí**
@@ -87,7 +113,7 @@ guardián se entera solo.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.1.0
+    rev: v0.1.1
     hooks:
       - id: garita
 ```
@@ -113,11 +139,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: proscar87/garita@v0.1.0
+      - uses: proscar87/garita@v0
 ```
 
 Es lo que nadie puede saltarse con `--no-verify`. Las dos capas se
 complementan; ninguna sustituye a la otra.
+
+| Entrada | Por omisión | Qué hace |
+|---|---|---|
+| `config` | `.garita.yml` | Ruta del archivo de configuración |
+| `solo-cambios` | `false` | Revisar sólo los archivos del pull request. Más rápido, **pero ciego a lo que ya estaba**: úsalo junto a una revisión completa programada, no en su lugar |
+
+| Salida | Qué trae |
+|---|---|
+| `hallazgos` | Número de hallazgos |
+
+Probada en `ubuntu-latest` y `macos-latest`. En runners de Windows agrega
+`actions/setup-python@v5` antes: `python3` no siempre existe ahí.
 
 ### Como comando
 
@@ -289,7 +327,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.1.0
+    rev: v0.1.1
     hooks:
       - id: garita
 ```
