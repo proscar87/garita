@@ -113,7 +113,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.3.0
+    rev: v0.3.1
     hooks:
       - id: garita
 ```
@@ -184,6 +184,28 @@ El documento SARIF respeta las mismas dos reglas que todo lo demás: ningún
 valor completo en los mensajes, y nada derivado del valor en las huellas que
 GitHub usa para seguir un hallazgo entre corridas. La deuda aceptada por la
 línea base aparece como `note`, no como error.
+
+## El reporte gráfico (`--formato html`)
+
+```bash
+garita --formato html --salida reporte.html              # revisión normal
+garita --historial --formato html --salida auditoria.html  # el entregable
+```
+
+Un HTML **autocontenido** — cifras, gráficas por detector y tabla de
+hallazgos — para el tercero que también existe: el cliente, el auditor, el
+consejo. Se abre con doble clic, se imprime y se anexa a un informe.
+
+- **Cero peticiones externas**: ni fuentes, ni scripts, ni CSS de un CDN. Un
+  reporte de seguridad que llama a terceros al abrirse les filtra cuándo y
+  dónde se lee. Las gráficas son CSS puro.
+- **Ningún valor completo**, igual que la consola y el SARIF.
+- La severidad nunca es sólo color: cada error lleva su ✗ y cada aviso su
+  `!` — el color no le habla al daltonismo ni a la impresora.
+- En la auditoría de historial separa lo vivo de lo que está sólo en el
+  pasado, con su guía de rotación en orden.
+
+---
 
 ## El historial también cuenta
 
@@ -418,7 +440,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.3.0
+    rev: v0.3.1
     hooks:
       - id: garita
 ```

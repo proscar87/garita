@@ -1130,3 +1130,61 @@ class RegresionesDelHistorial(unittest.TestCase):
         self.assertFalse(list(d.buscar("CLABE 032180000118359719", "x")))
         # Y la detección sigue viva: una CLABE válida cualquiera sí suena.
         self.assertTrue(list(d.buscar("CLABE 002180000000001008", "x")))
+
+
+class ReporteHtml(unittest.TestCase):
+    """El reporte gráfico autocontenido: el entregable para quien no vive
+    ni en la terminal ni en GitHub."""
+
+    CURP = "AABB900101HDFCDF09"
+
+    def test_emite_html_y_el_veredicto_no_cambia(self):
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP}\n"})
+        with td:
+            codigo, salida = correr_garita(Path(td.name), "--formato", "html")
+            self.assertEqual(codigo, 1)  # el formato no cambia el veredicto
+            self.assertTrue(salida.startswith("<!doctype html>"))
+            self.assertIn("Hallazgos por detector", salida)
+
+    def test_ningun_valor_ni_peticion_externa(self):
+        # Un reporte de seguridad que llama a un CDN al abrirse filtra a
+        # terceros cuándo y dónde se lee. Y el valor completo, jamás.
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP}\n"})
+        with td:
+            _, salida = correr_garita(Path(td.name), "--formato", "html")
+            for i in range(len(self.CURP) - 5):
+                self.assertNotIn(self.CURP[i:i + 6], salida)
+            import re
+            self.assertFalse(
+                re.findall(r'(?:src|href)="http', salida), "peticiones externas")
+
+    def test_salida_escribe_archivo_y_la_consola_queda_humana(self):
+        td = repo_temporal({"datos.csv": f"curp: {self.CURP}\n"})
+        with td:
+            raiz = Path(td.name)
+            codigo, salida = correr_garita(
+                raiz, "--formato", "html", "--salida", "reporte.html")
+            self.assertEqual(codigo, 1)
+            self.assertIn("<!doctype html>",
+                          (raiz / "reporte.html").read_text(encoding="utf-8"))
+            self.assertIn("datos.csv", salida)  # el reporte humano sigue
+
+    def test_historial_tambien_habla_html(self):
+        td = repo_temporal({"x.py": "x = 1\n"})
+        with td:
+            raiz = Path(td.name)
+            (raiz / "secreto.csv").write_text(
+                f"curp: {self.CURP}\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                            "commit", "-q", "-m", "entra"], cwd=raiz, check=True)
+            subprocess.run(["git", "rm", "-q", "secreto.csv"], cwd=raiz, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                            "commit", "-q", "-m", "lo borra"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz, "--historial",
+                                           "--formato", "html")
+            self.assertEqual(codigo, 1)
+            self.assertIn("Sólo en el historial", salida)
+            self.assertIn("git-filter-repo", salida)
+            for i in range(len(self.CURP) - 5):
+                self.assertNotIn(self.CURP[i:i + 6], salida)

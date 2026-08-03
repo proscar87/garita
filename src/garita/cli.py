@@ -39,6 +39,10 @@ from .nucleo import revisar
 from .reporte import (
     anotaciones_github, imprimir, imprimir_historial, resumen_markdown,
 )
+from .reporte_html import (
+    generar as generar_html,
+    generar_historial as generar_html_historial,
+)
 from .sarif import generar as generar_sarif
 
 
@@ -87,20 +91,22 @@ def main(argv: list[str] | None = None) -> int:
                    help="revisa TODAS las versiones de TODOS los archivos "
                         "que han pasado por el repositorio, no sólo las "
                         "actuales — un secreto «borrado» sigue en git")
-    p.add_argument("--formato", choices=("humano", "sarif"), default="humano",
-                   help="sarif produce el formato que GitHub ingiere como "
-                        "alertas de code scanning (por omisión, humano)")
+    p.add_argument("--formato", choices=("humano", "sarif", "html"),
+                   default="humano",
+                   help="sarif es lo que GitHub ingiere como alertas de code "
+                        "scanning; html es un reporte gráfico autocontenido, "
+                        "para entregar (por omisión, humano)")
     p.add_argument("--salida", metavar="RUTA",
-                   help="con --formato sarif, escribe el documento ahí en "
-                        "vez de stdout")
+                   help="con --formato sarif o html, escribe el documento "
+                        "ahí en vez de stdout")
     p.add_argument("--sin-color", action="store_true")
     p.add_argument("--version", action="version", version=f"garita {__version__}")
     args = p.parse_args(argv)
 
-    if args.salida and args.formato != "sarif":
+    if args.salida and args.formato == "humano":
         # Callar el reporte humano hacia un archivo no tiene caso de uso;
         # aceptar la bandera y sorprender después es peor que rechazarla.
-        print("Garita: --salida sólo aplica con --formato sarif.",
+        print("Garita: --salida sólo aplica con --formato sarif o html.",
               file=sys.stderr)
         return 2
 
@@ -189,10 +195,18 @@ def main(argv: list[str] | None = None) -> int:
         documento = json.dumps(generar_sarif(res, detectores,
                                              conocidos=conocidos),
                                indent=2, ensure_ascii=False) + "\n"
+    elif args.formato == "html":
+        documento = generar_html(
+            res, raiz=raiz.name, fecha=date.today().isoformat(),
+            base=base, nuevos=nuevos, conocidos=conocidos, pagadas=pagadas)
+    else:
+        documento = None
+
+    if documento is not None:
         if args.salida:
             Path(args.salida).write_text(documento, encoding="utf-8")
-            # El SARIF ya quedó en su archivo; la consola sigue siendo para
-            # humanos.
+            # El documento ya quedó en su archivo; la consola sigue siendo
+            # para humanos.
             imprimir(res, base=base, nuevos=nuevos, conocidos=conocidos,
                      pagadas=pagadas)
             anotaciones_github(res, conocidos=conocidos)
@@ -244,7 +258,19 @@ def _historial(args, cfg, detectores, raiz: Path) -> int:
         return 2
 
     res = revisar_historial(raiz, detectores, cfg.exenciones)
-    imprimir_historial(res)
+
+    if args.formato == "html":
+        # El entregable: la auditoría del pasado es justo lo que se anexa a
+        # un informe para alguien que no vive en la terminal.
+        documento = generar_html_historial(
+            res, raiz=raiz.name, fecha=date.today().isoformat())
+        if args.salida:
+            Path(args.salida).write_text(documento, encoding="utf-8")
+            imprimir_historial(res)
+        else:
+            sys.stdout.write(documento)
+    else:
+        imprimir_historial(res)
 
     if res.errores:
         return 1
