@@ -167,8 +167,8 @@ def _a_mapa(valor):
     return fuera
 
 
-def cargar(raiz: Path) -> Config:
-    ruta = raiz / NOMBRE_ARCHIVO
+def cargar(raiz: Path, nombre: str = NOMBRE_ARCHIVO) -> Config:
+    ruta = raiz / nombre
     if not ruta.is_file():
         # Sin configuración se revisa lo que no requiere saber nada del
         # proyecto. El detector de nombres queda apagado porque sin lista no

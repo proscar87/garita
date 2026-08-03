@@ -23,6 +23,7 @@ arreglo real casi nunca es editar la línea.
 from __future__ import annotations
 
 import fnmatch
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -67,6 +68,37 @@ EXTENSIONES_BINARIAS = {
     ".xlsx", ".xls", ".docx", ".doc", ".pptx",
 }
 
+# Carpetas donde el material con forma de secreto es, por definición, de
+# mentira: fixtures de TLS, instantáneas de pruebas, datos de ejemplo. Todo
+# proyecto que hable TLS versiona llaves de prueba; marcarlas garantiza que
+# el primer día de uso sea rojo, y ese día alguien desactiva el paso.
+#
+# No se apagan TODOS los detectores en esas rutas: un dato personal en un
+# archivo de pruebas sigue siendo un dato personal. Sólo se relajan los
+# detectores de material criptográfico, que es lo que legítimamente vive ahí.
+RUTAS_DE_PRUEBA = re.compile(
+    r"(^|/)(tests?|testdata|test_data|fixtures?|__snapshots__|__fixtures__"
+    r"|spec|specs|examples?|ejemplos?|mocks?|stubs?|testing)(/|$)"
+)
+DETECTORES_RELAJADOS_EN_PRUEBAS = frozenset({
+    "llave_privada", "llave_proveedor", "jwt", "credencial_en_url",
+    "asignacion_sospechosa",
+})
+
+# Formatos que no contienen datos aunque sean texto: tipografías vectoriales,
+# diagramas. Sus coordenadas producen cadenas numéricas indistinguibles de un
+# identificador — una sola tipografía SVG generaba treinta y ocho falsos
+# positivos de teléfono.
+EXTENSIONES_SIN_DATOS = {".svg", ".fig", ".dxf", ".eps", ".ps"}
+
+# Archivos de bloqueo de dependencias: miles de hashes base64 y ni un dato
+# personal. Sus cadenas casan por azar con identificadores alfanuméricos.
+ARCHIVOS_SIN_DATOS = {
+    "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "composer.lock",
+    "Cargo.lock", "poetry.lock", "Gemfile.lock", "go.sum", "pdm.lock",
+    "uv.lock", "bun.lockb", "flake.lock",
+}
+
 # Tope de tamaño. Un archivo de varios MB versionado casi siempre es un
 # volcado de datos, y revisarlo línea por línea cuesta minutos en CI. Se
 # avisa en vez de callar: un volcado grande es justo donde se esconde un
@@ -83,15 +115,27 @@ def archivos_versionados(raiz: Path) -> list[str]:
     return [f for f in salida.split("\0") if f]
 
 
-def es_revisable(ruta: Path) -> bool:
+def es_revisable(ruta: Path) -> tuple[bool, str]:
+    """¿Se revisa? Y si no, por qué.
+
+    El motivo se devuelve para poder DECIRLO. Antes se omitía en silencio, y
+    un archivo grande omitido calladamente es el peor modo de falla posible:
+    una marca verde sin revisión. En repositorios reales eso ya escondía
+    volcados de decenas de megabytes.
+    """
     if ruta.suffix.lower() in EXTENSIONES_BINARIAS:
-        return False
+        return False, "binario"
+    if ruta.suffix.lower() in EXTENSIONES_SIN_DATOS:
+        return False, "formato vectorial"
+    if ruta.name in ARCHIVOS_SIN_DATOS:
+        return False, "archivo de bloqueo de dependencias"
     try:
-        if ruta.stat().st_size > MAX_BYTES:
-            return False
+        tam = ruta.stat().st_size
     except OSError:
-        return False
-    return True
+        return False, "ilegible"
+    if tam > MAX_BYTES:
+        return False, f"pesa {tam // 1_000_000} MB, más del tope de {MAX_BYTES // 1_000_000} MB"
+    return True, ""
 
 
 # Marcas de orden de bytes. Se reconocen porque un archivo UTF-16 está lleno
@@ -164,6 +208,9 @@ class Resultado:
     hallazgos: list[Hallazgo] = field(default_factory=list)
     archivos_revisados: int = 0
     archivos_omitidos: int = 0
+    omitidos_grandes: list[tuple[str, str]] = field(default_factory=list)
+    """Los que se saltaron por tamaño, CON su motivo. Se reportan siempre:
+    callarlos convierte la revisión en una promesa vacía."""
     exentos_aplicados: dict[str, int] = field(default_factory=dict)
 
     @property
@@ -188,8 +235,14 @@ def revisar(
 
     for rel in (archivos if archivos is not None else archivos_versionados(raiz)):
         ruta = raiz / rel
-        if not ruta.is_file() or not es_revisable(ruta):
+        if not ruta.is_file():
             res.archivos_omitidos += 1
+            continue
+        revisable, motivo = es_revisable(ruta)
+        if not revisable:
+            res.archivos_omitidos += 1
+            if "tope" in motivo:
+                res.omitidos_grandes.append((rel, motivo))
             continue
         texto = leer(ruta)
         if texto is None:
@@ -197,6 +250,7 @@ def revisar(
             continue
         res.archivos_revisados += 1
 
+        en_pruebas = bool(RUTAS_DE_PRUEBA.search(rel))
         for det in dets:
             cubierto = next((e for e in exen if e.cubre(rel, det.nombre)), None)
             if cubierto is not None:
@@ -205,6 +259,12 @@ def revisar(
                 )
                 continue
             for h in det.buscar(texto, rel):
+                # El filtro se aplica sobre la ETIQUETA del hallazgo, no sobre
+                # el nombre del detector: `secretos` produce hallazgos de
+                # `llave_privada`, `jwt` y demás, y sólo algunos se relajan en
+                # rutas de prueba.
+                if en_pruebas and h.detector in DETECTORES_RELAJADOS_EN_PRUEBAS:
+                    continue
                 res.hallazgos.append(h)
 
     return res

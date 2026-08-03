@@ -39,10 +39,13 @@ def raiz_repo(desde: Path) -> Path:
         ).stdout.decode().strip()
         return Path(salida)
     except (subprocess.CalledProcessError, FileNotFoundError):
-        raise SystemExit(
-            "Garita revisa lo que git rastrea, así que necesita correr dentro "
-            "de un repositorio. No encontré uno aquí."
-        )
+        # Código 2, no 1: no encontrar un repositorio es un problema de
+        # entorno, y confundirlo con un hallazgo manda a alguien a buscar un
+        # dato personal que no existe.
+        print("Garita revisa lo que git rastrea, así que necesita correr "
+              "dentro de un repositorio. No encontré uno aquí.",
+              file=sys.stderr)
+        raise SystemExit(2)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,13 +68,29 @@ def main(argv: list[str] | None = None) -> int:
     raiz = raiz_repo(Path.cwd())
 
     try:
-        cfg = cargar_config(Path(args.config).parent if args.config else raiz)
+        if args.config:
+            ruta_cfg = Path(args.config)
+            if not ruta_cfg.is_file():
+                print(f"Garita: no existe el archivo de configuración "
+                      f"«{args.config}». No se continúa con los valores por "
+                      f"omisión: correr con otra configuración de la que se "
+                      f"pidió es peor que no correr.", file=sys.stderr)
+                return 2
+            cfg = cargar_config(ruta_cfg.parent, nombre=ruta_cfg.name)
+        else:
+            cfg = cargar_config(raiz)
     except ConfigInvalida as e:
         print(f"Garita: configuración inválida.\n  {e}", file=sys.stderr)
         return 2
 
     try:
         detectores = construir(cfg, raiz)
+    except ValueError as e:
+        # Un país inexistente es un error de configuración, no un hallazgo.
+        # Salir con 1 haría que el equipo buscara un dato personal que no
+        # existe.
+        print(f"Garita: {e}", file=sys.stderr)
+        return 2
     except FuenteInvalida as e:
         # Falla ruidosa y con código propio: un guardián que no pudo cargar su
         # lista NO debe aprobar. Aprobar por no poder revisar es la peor

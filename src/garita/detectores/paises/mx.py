@@ -152,10 +152,40 @@ def clabe_valida(clabe: str) -> bool:
     return str((10 - suma % 10) % 10) == clabe[17]
 
 
+# Códigos de institución vigentes del catálogo de la ABM/Banxico. El
+# catálogo NO es un adorno: sin él, el dígito de control por sí solo deja
+# pasar ~1 de cada 10 cadenas de 18 dígitos, y una tabla de constantes
+# científicas produce decenas de falsos positivos — pasó, con cincuenta
+# hallazgos en un solo archivo de numpy, todos con «bancos» inexistentes
+# como 9568 o 4762.
+#
+# Se listan los tres primeros dígitos. Es un subconjunto de instituciones
+# activas, no el catálogo completo: prefiero dejar pasar una CLABE de un
+# banco recién autorizado que marcar cincuenta números que no lo son.
+_BANCOS = {
+    "002", "006", "009", "012", "014", "019", "021", "022", "030", "032",
+    "036", "037", "040",
+    "042", "044", "058", "059", "060", "062", "072", "103", "106", "108",
+    "110", "112", "113", "116", "124", "126", "127", "128", "129", "130",
+    "131", "132", "133", "135", "136", "137", "138", "139", "140", "141",
+    "143", "145", "147", "148", "150", "151", "152", "154", "155", "156",
+    "157", "158", "159", "160", "166", "168", "600", "601", "602", "605",
+    "606", "607", "608", "610", "611", "613", "614", "615", "616", "617",
+    "618", "619", "620", "621", "622", "623", "626", "627", "628", "629",
+    "630", "631", "632", "633", "634", "636", "637", "638", "640", "642",
+    "646", "647", "648", "649", "651", "652", "653", "655", "656", "659",
+    "670", "677", "679", "684", "901", "902",
+}
+
+
 def _clabe_es_relleno(clabe: str) -> bool:
     """Cuentas en ceros o nueves: son marcadores de documentación."""
     cuenta = clabe[6:17]
     return cuenta in ("0" * 11, "9" * 11)
+
+
+def _banco_existe(clabe: str) -> bool:
+    return clabe[:3] in _BANCOS
 
 
 # ── NSS ────────────────────────────────────────────────────────────────────
@@ -260,8 +290,11 @@ def _buscar_rfc(texto: str, archivo: str) -> Iterator[Hallazgo]:
 def _buscar_clabe(texto: str, archivo: str) -> Iterator[Hallazgo]:
     for i, linea in enumerate(texto.splitlines(), 1):
         for m in _CLABE.finditer(linea):
+            from ._comun import dentro_de_un_numero
+            if dentro_de_un_numero(linea, m.start(), m.end()):
+                continue
             v = _SEPARADORES.sub("", m.group(0))
-            if not clabe_valida(v) or _clabe_es_relleno(v):
+            if not clabe_valida(v) or _clabe_es_relleno(v) or not _banco_existe(v):
                 continue
             yield _hallazgo(archivo, i, "clabe", v,
                             "Es una CLABE con dígito de control válido. "

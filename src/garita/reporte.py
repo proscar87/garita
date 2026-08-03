@@ -46,6 +46,20 @@ def imprimir(res: Resultado, salida=sys.stdout) -> None:
     color = _color(salida.isatty() and not _en_github())
     n = color
 
+    # Los archivos que se saltaron por tamaño se dicen SIEMPRE, haya o no
+    # hallazgos. Un volcado grande omitido en silencio es una marca verde sin
+    # revisión, que es exactamente lo que esta herramienta existe para no
+    # producir.
+    if res.omitidos_grandes:
+        print(file=salida)
+        print(n("! Sin revisar por tamaño:", "amarillo"), file=salida)
+        for archivo, motivo in res.omitidos_grandes[:10]:
+            print(n(f"    {archivo} — {motivo}", "gris"), file=salida)
+        if len(res.omitidos_grandes) > 10:
+            print(n(f"    …y {len(res.omitidos_grandes) - 10} más", "gris"), file=salida)
+        print(n("  Un archivo grande es justo donde cabe un padrón entero. "
+                "Revísalos aparte.", "gris"), file=salida)
+
     if not res.hallazgos:
         print(n("✓ Garita: nada que reportar.", "verde"), file=salida)
         print(n(f"  {res.archivos_revisados} archivos revisados, "

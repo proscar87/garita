@@ -32,6 +32,11 @@ def archivos_del_pr() -> list[str]:
 
 if __name__ == "__main__":
     argv = []
+    # El input `config` de la Action se exportaba y nunca se leía: la opción
+    # documentada era inoperante.
+    cfg = os.environ.get("GARITA_CONFIG", "").strip()
+    if cfg and cfg != ".garita.yml":
+        argv += ["--config", cfg]
     if os.environ.get("GARITA_SOLO_CAMBIOS", "").lower() == "true":
         cambios = archivos_del_pr()
         if cambios:

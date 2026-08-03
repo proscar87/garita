@@ -72,12 +72,18 @@ class Secretos(unittest.TestCase):
 
     def test_detecta_token_de_proveedor(self):
         for t in ["ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8",
-                  "AKIAIOSFODNN7EXAMPLE",
-                  "sk-ant-api03-AbCdEfGhIjKlMnOpQrStUvWx"]:
+                  "AKIAQWERTYUIOPASDFGH",
+                  "sk-ant-api03-QwErTyUiOpAsDfGhJkLzXc"]:
             self.assertTrue(self.detecta(f"KEY = '{t}'"), t)
 
+    def test_no_marca_la_llave_de_ejemplo_de_aws(self):
+        """`AKIAIOSFODNN7EXAMPLE` es la clave canónica de la documentación de
+        AWS. Aparece en incontables archivos de configuración de ejemplo, y
+        marcarla es de los falsos positivos más comunes que existen."""
+        self.assertFalse(self.detecta('accessKey: "AKIAIOSFODNN7EXAMPLE"'))
+
     def test_detecta_contrasena_en_url(self):
-        self.assertTrue(self.detecta("postgres://admin:s3cr3taLarga@h:5432/d"))
+        self.assertTrue(self.detecta("postgres://admin:Kx9mPqR2vNw8@h:5432/d"))
 
     def test_no_marca_url_sin_contrasena(self):
         self.assertFalse(self.detecta("postgres://localhost:5432/d"))
@@ -106,6 +112,90 @@ class Asignaciones(unittest.TestCase):
 
     def test_no_marca_valor_corto(self):
         self.assertFalse(list(buscar_asignaciones('password = "1234"', "f")))
+
+
+class RuidoDeReposReales(unittest.TestCase):
+    """Casos tomados de repositorios públicos que rompían el build.
+
+    Cinco proyectos populares sin un solo dato personal mexicano daban entre
+    1 y 122 errores cada uno. Cada prueba de aquí es uno de esos falsos
+    positivos, para que no vuelva: son los que deciden si alguien conserva la
+    herramienta o la desinstala el primer día.
+    """
+
+    def sec(self, t):
+        return bool(list(buscar(t, "x.py")))
+
+    def asig(self, t):
+        return bool(list(buscar_asignaciones(t, "x.py")))
+
+    def test_desestructuracion_de_una_llamada(self):
+        # requests/src/requests/adapters.py
+        self.assertFalse(self.asig("username, password = get_auth_from_url(proxy)"))
+
+    def test_token_de_parseo_no_es_credencial(self):
+        # faker/src/modules/helpers/module.ts — «token» de un parser
+        self.assertFalse(self.asig("let token = RANGE_REP_REG.exec(string);"))
+
+    def test_referencia_a_campo(self):
+        # argo-cd/pkg/apis/application/v1alpha1/types.go
+        self.assertFalse(self.asig("Password: c.Config.Password,"))
+
+    def test_llamada_en_el_readme_de_faker(self):
+        self.assertFalse(self.asig("password: faker.internet.password(),"))
+
+    def test_variable_de_ci_interpolada(self):
+        # argo-cd/.github/workflows/release.yaml — es el patrón CORRECTO
+        self.assertFalse(self.sec(
+            'git push "https://x-access-token:${GH_TOKEN}@github.com/x.git"'))
+
+    def test_constantes_cientificas_no_son_clabe(self):
+        """numpy/random/src/distributions/ziggurat_constants.h daba 50 falsos
+        positivos: la mantisa de un doble tiene 18 dígitos y uno de cada diez
+        pasa el módulo 10. El catálogo de bancos es lo que los descarta."""
+        from garita.detectores.paises.mx import detectores as mx
+        from garita.config import Config
+        d = {x.nombre: x for x in mx(Config())}["clabe"]
+        for t in ["3.956832198097553231e-17,", "4.126611778175946428e-17,",
+                  "p = 9.999999999333333333e-6 + x"]:
+            self.assertFalse(list(d.buscar(t, "x.h")), t)
+
+    def test_llaves_de_prueba_de_tls(self):
+        """Todo proyecto que hable TLS versiona llaves de prueba. Marcarlas
+        garantiza que el primer día de uso sea rojo."""
+        td = repo_temporal({
+            "tests/certs/server.key": "-----BEGIN RSA PRIVATE KEY-----\nabc\n",
+            "src/real.key": "-----BEGIN RSA PRIVATE KEY-----\nabc\n",
+        })
+        with td:
+            raiz = Path(td.name)
+            cfg = cargar_config(raiz)
+            res = revisar(raiz, construir(cfg, raiz), cfg.exenciones)
+            archivos = {h.archivo for h in res.hallazgos}
+            self.assertNotIn("tests/certs/server.key", archivos)
+            self.assertIn("src/real.key", archivos,
+                          "fuera de rutas de prueba sí debe marcarse")
+
+
+class MarcadoresSobreElValor(unittest.TestCase):
+    """El filtro de marcadores se aplicaba a la LÍNEA entera.
+
+    Eso abría un boquete: una credencial real cuyo host dijera «example», o
+    con un comentario «# ejemplo» al final, pasaba sin más.
+    """
+
+    def test_credencial_real_con_host_de_ejemplo(self):
+        self.assertTrue(list(buscar(
+            "DATABASE_URL=postgres://admin:Kx9mPqR2v@db.example.com:5432/prod",
+            "x")))
+
+    def test_credencial_real_con_comentario_ejemplo(self):
+        self.assertTrue(list(buscar(
+            "llave: sk-ant-api03-QwErTyUiOpAsDfGhJkLz  # ejemplo", "x")))
+
+    def test_contrasena_que_si_es_marcador(self):
+        self.assertFalse(list(buscar(
+            'url = "postgres://user:your_password_here@localhost/db"', "x")))
 
 
 class Fuentes(unittest.TestCase):
