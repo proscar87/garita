@@ -164,7 +164,9 @@ class Nombres(unittest.TestCase):
         self.assertTrue(rx.search("firmó Bermúdez el acta"))
 
     def test_ignora_mayusculas(self):
-        self.assertTrue(a_patron(["María"]).search("MARTHA HUESCAS"))
+        self.assertTrue(a_patron(["María"]).search("MARÍA GÓMEZ"))
+        self.assertTrue(a_patron(["María"]).search("MARIA GOMEZ"),
+                        "también sin acentos, como suele venir en un CSV")
 
     def test_no_casa_dentro_de_otra_palabra(self):
         """Sin fronteras de palabra, «Ana» casaría en «banana» y «Sonora»."""

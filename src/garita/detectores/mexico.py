@@ -129,10 +129,16 @@ def rfc_valido(rfc: str) -> bool:
 
 # ── CLABE ──────────────────────────────────────────────────────────────────
 
-# Los estados de cuenta imprimen la CLABE agrupada («0321-8000-0118-3597-19»),
+# Los estados de cuenta imprimen la CLABE agrupada («0000-0000-0000-0000-00»),
 # así que se aceptan guiones y espacios entre grupos y se quitan antes de
 # validar. Sin esto, el formato en que un banco la entrega es justamente el
 # que se escapa.
+#
+# El ejemplo de arriba a propósito NO pasa el dígito de control: la primera
+# versión de este comentario traía una CLABE válida y Garita la marcó al
+# revisarse a sí misma. Es la práctica que la herramienta recomienda —
+# documentar formatos con valores que no validan— y la aprendimos siendo el
+# primer usuario que la incumple.
 _CLABE = re.compile(r"(?<![\d-])\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{2}(?![\d-])")
 _SEPARADORES = re.compile(r"[\s-]")
 
