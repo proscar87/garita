@@ -16,7 +16,7 @@ exenciones:
 
   - archivo: tests/test_garita.py
     motivo: los vectores de prueba son sintéticos o genéricos oficiales; sin ellos no se puede verificar la herramienta
-    detectores: curp, rfc, clabe, nss, telefono, cpf, cif, secretos, asignacion_sospechosa
+    detectores: curp, rfc, clabe, nss, telefono, cpf, cif, ssn, sin_ca, nif_pt, ci_uy, secretos, asignacion_sospechosa
 
   - archivo: README.md
     motivo: los ejemplos de configuración muestran formatos, no valores reales

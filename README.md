@@ -96,8 +96,24 @@ repo cuya propia convención era el alias.
 ## ¿Tu país no está?
 
 Los identificadores oficiales viven en `detectores/paises/`, **un archivo por
-país**. Hoy están México, Argentina, Brasil, Chile, Colombia, España y Perú; agregar otro es un archivo, no una rama — comparten
-motor, exenciones y pruebas, así que un arreglo llega a todos el mismo día.
+país**. Hoy son once:
+
+| País | Identificadores | Validación |
+|---|---|---|
+| 🇲🇽 México | CURP, RFC, CLABE, NSS, teléfono | dígito verificador + lada del PNN |
+| 🇦🇷 Argentina | CUIT/CUIL (contiene el DNI) | módulo 11 |
+| 🇧🇷 Brasil | CPF, CNPJ (alfanumérico 2026) | doble dígito verificador |
+| 🇨🇱 Chile | RUT/RUN | módulo 11 |
+| 🇨🇴 Colombia | NIT | dígito de la DIAN |
+| 🇪🇸 España | DNI, NIE, CIF, IBAN | letra de control / módulo 97 |
+| 🇵🇪 Perú | RUC | dígito verificador |
+| 🇺🇸 EE.UU. | SSN | estructura SSA + contexto obligatorio |
+| 🇨🇦 Canadá | SIN | Luhn + contexto |
+| 🇵🇹 Portugal | NIF | módulo 11 + contexto |
+| 🇺🇾 Uruguay | Cédula de identidad | dígito verificador |
+
+Agregar otro es un archivo, no una rama — comparten motor, exenciones y
+pruebas, así que un arreglo llega a todos el mismo día.
 
 ```yaml
 paises: mx, co     # por omisión: todos los disponibles
@@ -122,7 +138,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.4.0
+    rev: v0.5.0
     hooks:
       - id: garita
 ```
@@ -452,7 +468,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.4.0
+    rev: v0.5.0
     hooks:
       - id: garita
 ```
