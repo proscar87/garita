@@ -172,7 +172,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: |
-          pip install git+https://github.com/proscar87/garita@v0.2.1
+          pip install garita
           garita --formato sarif --salida garita.sarif
         continue-on-error: true
       - uses: github/codeql-action/upload-sarif@v3
@@ -188,7 +188,7 @@ línea base aparece como `note`, no como error.
 ### Como comando
 
 ```bash
-pip install git+https://github.com/proscar87/garita@v0.2.1
+pip install garita
 garita              # revisa el repositorio
 garita --explicar   # dice qué va a revisar y con qué configuración
 ```
