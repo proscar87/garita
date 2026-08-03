@@ -7,12 +7,19 @@ on:
 jobs:
   pruebas:
     name: Pruebas
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         # 3.9 es el mínimo declarado; si se rompe ahí, la promesa del
         # pyproject es falsa y alguien lo va a descubrir instalándolo.
         python: ["3.9", "3.12", "3.13"]
+        os: [ubuntu-latest]
+        # Un SO por sabor alcanza para atrapar lo que se rompe fuera de
+        # Linux (separadores de ruta en exenciones, fin de línea, git);
+        # la matriz completa de 9 solo quema minutos.
+        include:
+          - { os: macos-latest, python: "3.13" }
+          - { os: windows-latest, python: "3.13" }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -20,6 +27,9 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Correr las pruebas
         run: python -m unittest discover -s tests -v
+        env:
+          # Windows escribe cp1252 por omisión y las pruebas imprimen UTF-8.
+          PYTHONUTF8: "1"
 
   autorevision:
     name: Garita se revisa a sí misma

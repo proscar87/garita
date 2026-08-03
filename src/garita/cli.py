@@ -329,6 +329,10 @@ def _explicar(cfg: Config, detectores, raiz: Path) -> int:
         print("  Para activarlo, en .garita.yml:")
         print("    nombres:")
         print("      - scripts/generar_datos_sinteticos.py:PROHIBIDOS")
+    if cfg.fuentes_clientes:
+        print("\nLista de clientes, leída de:")
+        for f in cfg.fuentes_clientes:
+            print(f"  · {f}")
     if cfg.exenciones:
         print("\nExenciones declaradas:")
         for e in cfg.exenciones:

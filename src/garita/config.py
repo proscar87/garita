@@ -39,6 +39,10 @@ NOMBRE_ARCHIVO = ".garita.yml"
 class Config:
     fuentes_nombres: list[str] = field(default_factory=list)
     """Dónde vive la lista de nombres a proteger. Ver `fuentes.cargar`."""
+    fuentes_clientes: list[str] = field(default_factory=list)
+    """Dónde vive la lista de clientes (nombres, dominios, seriales). Mismo
+    mecanismo que los nombres: la lista ya existe en algún lado del proyecto
+    —el CRM, el generador de alias— y se lee de ahí, no se duplica aquí."""
 
     detectores: dict[str, bool] = field(default_factory=dict)
     """Cuáles activar. Ausente = activo."""
@@ -185,6 +189,11 @@ def cargar(raiz: Path, nombre: str = NOMBRE_ARCHIVO) -> Config:
         fuentes = [fuentes]
     fuentes = [f for f in fuentes if isinstance(f, str)]
 
+    fuentes_cli = datos.get("clientes", [])
+    if isinstance(fuentes_cli, str):
+        fuentes_cli = [fuentes_cli]
+    fuentes_cli = [f for f in fuentes_cli if isinstance(f, str)]
+
     exenciones = []
     for e in datos.get("exenciones", []) or []:
         if not isinstance(e, dict):
@@ -211,6 +220,7 @@ def cargar(raiz: Path, nombre: str = NOMBRE_ARCHIVO) -> Config:
 
     return Config(
         fuentes_nombres=fuentes,
+        fuentes_clientes=fuentes_cli,
         paises=paises,
         detectores={k: bool(v) for k, v in _a_mapa(datos.get("detectores", [])).items()},
         exenciones=exenciones,

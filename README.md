@@ -40,6 +40,7 @@ Garita es eso que faltaba.
 | Detector | Qué busca | Cómo evita gritar en falso |
 |---|---|---|
 | `nombre` | Nombres de personas de **tu** proyecto | Fronteras de palabra, tolerante a acentos |
+| `cliente` | Nombres, dominios o seriales de **tus clientes** | Misma mecánica de lista única que `nombre` |
 | `curp` | CURP | **Dígito verificador** + fecha + catálogo de entidades |
 | `rfc` | RFC | **Dígito verificador** (módulo 11) + fecha |
 | `clabe` | CLABE interbancaria | **Dígito de control** (3-7-1, módulo 10) |
@@ -82,6 +83,14 @@ guardián se entera solo.
 > JSON (`datos.json:padron.nombres`) o un archivo de texto, uno por línea. El
 > AST es la recomendación, no el requisito.
 
+**La misma idea aplica a clientes.** Un repo de consultoría —casos de
+estudio, análisis, entregables— tiene la regla inversa del padrón: el
+*sector* se documenta, el *cliente* jamás. La lista `clientes:` acepta lo
+que lo identifique (nombre, dominio, serial de su appliance) y el detector
+`cliente` lo bloquea donde aparezca, con su mensaje: usa el alias por
+sector. Nació de un caso real: un case study que nombraba al cliente en un
+repo cuya propia convención era el alias.
+
 ---
 
 ## ¿Tu país no está?
@@ -113,7 +122,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.3.1
+    rev: v0.4.0
     hooks:
       - id: garita
 ```
@@ -292,6 +301,9 @@ apaga el detector de nombres avisándolo.
 nombres:
   - scripts/generar_datos_sinteticos.py:PROHIBIDOS
 
+clientes:
+  - clientes.txt        # nombres, dominios o seriales — uno por línea
+
 detectores:
   - nss: false          # apágalo si tu proyecto no toca IMSS
 
@@ -440,7 +452,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.3.1
+    rev: v0.4.0
     hooks:
       - id: garita
 ```
