@@ -226,7 +226,8 @@ un problema real. Los algoritmos de CURP, RFC, CLABE y NSS se verificaron
 reproduciendo identificadores de muestra publicados por RENAPO, el SAT y el
 IMSS; las fuentes están en `docs/IDENTIFICADORES.md`.
 
-MIT. Úsalo, cámbialo, véndelo.
+MIT © 2026 Oscar Pacheco ([proscar87](https://github.com/proscar87)).
+Úsalo, cámbialo, véndelo.
 
 ---
 ---

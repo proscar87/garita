@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Impide que datos personales y credenciales entren a un repositorio git"
 readme = "README.md"
 license = { text = "MIT" }
+authors = [{ name = "Oscar Pacheco", email = "proscar87@users.noreply.github.com" }]
 requires-python = ">=3.9"
 keywords = ["pii", "curp", "rfc", "clabe", "secret-scanning", "dlp",
             "pre-commit", "github-action", "lfpdppp", "mexico"]
