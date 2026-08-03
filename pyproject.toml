@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "garita"
+version = "0.1.0"
+description = "Impide que datos personales y credenciales entren a un repositorio git"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+keywords = ["pii", "curp", "rfc", "clabe", "secret-scanning", "dlp",
+            "pre-commit", "github-action", "lfpdppp", "mexico"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security",
+  "Natural Language :: Spanish",
+]
+# Sin dependencias, a propósito: un guardián que exige `pip install` antes de
+# correr es un guardián que la gente pospone, y el que se pospone no protege.
+dependencies = []
+
+[project.scripts]
+garita = "garita.cli:main"
+
+[project.urls]
+Repositorio = "https://github.com/proscar87/garita"
+
+[tool.setuptools.packages.find]
+where = ["src"]

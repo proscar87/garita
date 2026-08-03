@@ -1,0 +1,44 @@
+name: 'Garita'
+description: 'Impide que datos personales y credenciales entren al repositorio. Detecta nombres de tu propio padrón, CURP, RFC, CLABE y secretos.'
+author: 'proscar87'
+
+branding:
+  icon: 'shield'
+  color: 'orange'
+
+inputs:
+  config:
+    description: 'Ruta del archivo .garita.yml'
+    required: false
+    default: '.garita.yml'
+  solo-cambios:
+    description: 'Revisar únicamente los archivos que cambia el pull request. Más rápido, pero no ve lo que ya estaba: úsalo con una revisión completa programada.'
+    required: false
+    default: 'false'
+
+outputs:
+  hallazgos:
+    description: 'Número de hallazgos'
+    value: ${{ steps.revisar.outputs.hallazgos }}
+
+runs:
+  using: 'composite'
+  steps:
+    # Sin `fetch-depth: 0` la comparación con la rama base no tiene con qué
+    # comparar. Se avisa en vez de fallar raro más adelante.
+    - name: Verificar el checkout
+      shell: bash
+      run: |
+        if [ ! -d .git ]; then
+          echo "::error::Garita necesita el repositorio. Agrega actions/checkout antes de este paso."
+          exit 1
+        fi
+
+    - name: Revisar
+      id: revisar
+      shell: bash
+      env:
+        GARITA_CONFIG: ${{ inputs.config }}
+        GARITA_SOLO_CAMBIOS: ${{ inputs.solo-cambios }}
+      run: |
+        python3 "${{ github.action_path }}/scripts/ejecutar.py"

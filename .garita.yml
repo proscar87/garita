@@ -1,0 +1,23 @@
+# Garita se revisa a sí misma.
+#
+# Una herramienta de seguridad que no se aplica sus propias reglas pide una
+# confianza que no está dispuesta a dar. Además es la prueba de humo más
+# honesta: si las exenciones de este archivo crecieran sin control, sería la
+# señal de que los detectores están mal calibrados.
+
+exenciones:
+  - archivo: docs/IDENTIFICADORES.md
+    motivo: documenta los algoritmos citando las claves de muestra oficiales de RENAPO, el SAT y el IMSS; ninguna pertenece a una persona
+    detectores: curp, rfc, clabe, nss, telefono
+
+  - archivo: src/garita/detectores/mexico.py
+    motivo: contiene las listas blancas de claves de muestra y genéricos oficiales
+    detectores: curp, rfc
+
+  - archivo: tests/test_garita.py
+    motivo: los vectores de prueba son sintéticos o genéricos oficiales; sin ellos no se puede verificar la herramienta
+    detectores: curp, rfc, clabe, nss, telefono, secretos, asignacion_sospechosa
+
+  - archivo: README.md
+    motivo: los ejemplos de configuración muestran formatos, no valores reales
+    detectores: secretos

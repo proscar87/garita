@@ -1,0 +1,13 @@
+# Bloquear en el commit, no en el push.
+#
+# Si el único control está en CI, cuando falla el dato personal YA VIVE en un
+# commit — y el arreglo pasa de «borra la línea» a «reescribe el historial y
+# avisa a quien haya clonado». El hook es donde el arreglo todavía es barato;
+# la Action es el respaldo que nadie puede saltarse con --no-verify.
+- id: garita
+  name: Garita — datos personales y credenciales
+  description: Impide que nombres de tu padrón, identificadores mexicanos y secretos entren al repositorio.
+  entry: garita
+  language: python
+  pass_filenames: true
+  require_serial: false

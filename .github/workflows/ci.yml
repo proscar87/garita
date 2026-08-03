@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pruebas:
+    name: Pruebas
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 3.9 es el mínimo declarado; si se rompe ahí, la promesa del
+        # pyproject es falsa y alguien lo va a descubrir instalándolo.
+        python: ["3.9", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Correr las pruebas
+        run: python -m unittest discover -s tests -v
+
+  autorevision:
+    name: Garita se revisa a sí misma
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Se invoca la acción de este mismo repositorio: si el empaquetado se
+      # rompe, esto falla antes de que lo descubra quien la instale.
+      - uses: ./
