@@ -1188,3 +1188,77 @@ class ReporteHtml(unittest.TestCase):
             self.assertIn("git-filter-repo", salida)
             for i in range(len(self.CURP) - 5):
                 self.assertNotIn(self.CURP[i:i + 6], salida)
+
+
+class Clientes(unittest.TestCase):
+    """La lista de clientes: nació de un caso real — un case study que
+    nombraba al cliente, su dominio y el serial de su appliance en un repo
+    cuya propia convención era el alias por sector. Mismo diseño de
+    una-sola-lista que los nombres de personas."""
+
+    def _repo(self):
+        return repo_temporal({
+            "clientes.txt": "AcmeCorp\nacme.edu.mx\n1506209900112233\n",
+            ".garita.yml": ("clientes:\n  - clientes.txt\n"
+                            "exenciones:\n  - archivo: clientes.txt\n"
+                            "    motivo: es la fuente de la lista\n"
+                            "    detectores: cliente\n"),
+        })
+
+    def _revisa(self, raiz):
+        cfg = cargar_config(raiz)
+        return revisar(raiz, construir(cfg, raiz), cfg.exenciones)
+
+    def test_detecta_nombre_dominio_y_serial(self):
+        td = self._repo()
+        with td:
+            raiz = Path(td.name)
+            (raiz / "caso.md").write_text(
+                "# Caso AcmeCorp\nhost: gm1.acme.edu.mx\n"
+                "serial 1506209900112233\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            res = self._revisa(raiz)
+            self.assertEqual(len(res.hallazgos), 3, [h.que for h in res.hallazgos])
+            self.assertEqual({h.detector for h in res.hallazgos}, {"cliente"})
+
+    def test_no_casa_dentro_de_otra_palabra(self):
+        td = self._repo()
+        with td:
+            raiz = Path(td.name)
+            (raiz / "nota.md").write_text(
+                "estudiamos el caso de acmecorporativo\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            res = self._revisa(raiz)
+            self.assertEqual(res.hallazgos, [], [h.que for h in res.hallazgos])
+
+    def test_ignora_mayusculas(self):
+        td = self._repo()
+        with td:
+            raiz = Path(td.name)
+            (raiz / "caso.md").write_text("cliente: ACMECORP\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            res = self._revisa(raiz)
+            self.assertEqual(len(res.hallazgos), 1)
+
+    def test_el_historial_tambien_lo_ve(self):
+        td = self._repo()
+        with td:
+            raiz = Path(td.name)
+            (raiz / "caso.md").write_text("# Caso AcmeCorp\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                            "commit", "-q", "-m", "caso"], cwd=raiz, check=True)
+            subprocess.run(["git", "rm", "-q", "caso.md"], cwd=raiz, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                            "commit", "-q", "-m", "lo borra"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz, "--historial")
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("cliente", salida)
+            self.assertIn("Sólo en el historial", salida)
+
+    def test_sin_lista_el_detector_no_existe(self):
+        td = repo_temporal({"x.md": "AcmeCorp por todos lados\n"})
+        with td:
+            raiz = Path(td.name)
+            res = self._revisa(raiz)
+            self.assertEqual(res.hallazgos, [])
