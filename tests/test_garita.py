@@ -220,6 +220,79 @@ class MarcadoresSobreElValor(unittest.TestCase):
             'url = "postgres://user:your_password_here@localhost/db"', "x")))
 
 
+class CalibracionDeSecretos(unittest.TestCase):
+    """v0.9.0: cuatro maneras de aprobar en silencio, cerradas.
+
+    Descartar un secreto real porque contiene «tu» como subcadena, no
+    reconocer los prefijos vigentes de proveedor, exigir usuario en la URL,
+    y cortar en la primera asignación de la línea.
+    """
+
+    def test_secreto_real_con_tu_dentro_ya_no_se_descarta(self):
+        # «VirtualPass2024» contiene «tu» en «Virtual»; el .search sin
+        # fronteras lo trataba como placeholder y la URL pasaba limpia.
+        self.assertFalse(es_marcador("VirtualPass2024"))
+        self.assertTrue(list(buscar(
+            "postgres://app:VirtualPass2024@db.interno:5432/prod", "x")))
+
+    def test_marcador_incrustado_entre_letras_ya_no_absuelve(self):
+        # base64 aleatorio puede contener «fake» por azar, flanqueado
+        # de letras: eso no vuelve ejemplo a la llave.
+        self.assertFalse(es_marcador("QmXfakeR7tZw2LpXc8vN"))
+
+    def test_el_posesivo_como_valor_entero_sigue_exento(self):
+        for v in ("tu_clave", "tu-api-key-aqui", "tuclave123",
+                  "your_password_here", "TU_TOKEN_AQUI", "yourkey12345"):
+            self.assertTrue(es_marcador(v), v)
+
+    def test_marcador_tras_digito_sigue_contando(self):
+        # La llave canónica de la documentación de AWS: su «EXAMPLE» va
+        # pegado a un dígito y cierra el valor. Sigue siendo ejemplo.
+        self.assertTrue(es_marcador("AKIAIOSFODNN7EXAMPLE"))
+
+    def test_formatos_vigentes_de_proveedor(self):
+        # Las de Stripe se arman por concatenación: con el literal completo
+        # en el archivo, la push protection de GitHub (con razón) no deja
+        # subir esta prueba. El cuerpo es el de la documentación de Stripe.
+        stripe = "4eC39HqLyjWDarjtT1zdp7dc"
+        for t in ("sk-proj-Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy4z",   # OpenAI
+                  "sk-svcacct-Ab3dEf6hIj9kLm2nOp5qRs8t",
+                  "sk_live_" + stripe,
+                  "rk_live_" + stripe,
+                  "gho_16C7e42F292c6912E7710c838347Ae178B4a",   # GitHub OAuth
+                  "npm_16C7e42F292c6912E7710c838347Ae178B4a"):
+            self.assertTrue(list(buscar(f"KEY = '{t}'", "x")), t)
+
+    def test_el_formato_legado_sigue_detectandose(self):
+        self.assertTrue(list(buscar("k = 'sk-QwErTyUiOpAsDfGhJkLzXcVb'", "x")))
+
+    def test_clase_css_de_esqueleto_no_es_llave(self):
+        # Por esto el `sk-` pelón sigue exigiendo alfanumérico puro.
+        self.assertFalse(list(buscar('class="sk-loading-spinner-grande"', "x")))
+
+    def test_placeholder_con_prefijo_vigente_sigue_exento(self):
+        self.assertFalse(list(buscar(
+            "OPENAI_API_KEY=sk-proj-your_api_key_goes_here", "x")))
+
+    def test_url_sin_usuario_pero_con_contrasena(self):
+        # `redis://:contraseña@host` es la forma normal de redis y
+        # memcached; exigir usuario la dejaba pasar limpia.
+        self.assertTrue(list(buscar(
+            "REDIS_URL=redis://:Kx9mPqR2vNw8@cache.interno:6379", "x")))
+
+    def test_url_sin_contrasena_sigue_limpia(self):
+        self.assertFalse(list(buscar("redis://cache.interno:6379/0", "x")))
+
+    def test_dos_asignaciones_en_una_linea(self):
+        # `search` cortaba en la primera; si era un marcador, el `continue`
+        # se tragaba la línea entera con la credencial real que seguía.
+        hs = list(buscar_asignaciones(
+            'password = "your_password_here"; token = "Kx9mPqR2vNw8LtY4Qz"',
+            "x"))
+        self.assertEqual(1, len(hs))
+        self.assertIn("Kx9m", hs[0].que)
+
+
 class Fuentes(unittest.TestCase):
     def cargar(self, contenido: str, spec: str = "gen.py:PROHIBIDOS"):
         with TemporaryDirectory() as d:

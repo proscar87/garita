@@ -54,22 +54,33 @@ al final lo cosmético.
 
 ### Calibración de secretos
 
-- [ ] **`MARCADORES` descarta secretos reales que contengan «tu» como
+- [x] **`MARCADORES` descarta secretos reales que contengan «tu» como
   subcadena** — `src/garita/detectores/secretos.py:112,144`. El `.search`
   sin anclar hace que «VirtualPass2024» (contiene «tu» en «Virtual»), o
   cualquier token largo cuya base64 incluya «tu»/«ejemplo»/«fake», se
-  descarte en silencio como placeholder. Arreglo: para valores largos exigir
-  que el marcador domine el valor (anclar como ya hacen `_RELLENO` y
-  `_ES_TODO_MARCADOR`); la búsqueda por subcadena solo en valores cortos y
-  con fronteras de palabra.
+  descarte en silencio como placeholder. *(Arreglo final: un marcador cuenta
+  si no está incrustado entre letras — así «7EXAMPLE» de la llave de AWS
+  sigue contando — y «tu…»/«your…» sólo absuelve siendo el valor completo.)*
 
-- [ ] **Los formatos vigentes de OpenAI y Stripe no casan con
+- [x] **Los formatos vigentes de OpenAI y Stripe no casan con
   `llave_proveedor`** — `src/garita/detectores/secretos.py:67`.
   `sk-[A-Za-z0-9]{20,}` no admite guiones ni guiones bajos: `sk-proj-…`,
   `sk-svcacct-…`, `sk_live_…`, `rk_live_…` pasan limpios (el formato legado
-  sí se detecta). Arreglo: `sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}`
-  más alternativas para Stripe (`[sr]k_live_…`), npm y los demás prefijos de
-  GitHub (`gho_/ghs_/ghr_`).
+  sí se detecta). *(Arreglo final: prefijos explícitos `sk-proj-/svcacct-/
+  admin-`, `[sr]k_live_`, `gh[opsur]_` y `npm_`; el `sk-` pelón se queda
+  alfanumérico puro a propósito — admitirle guiones casaría clases CSS de
+  esqueleto.)*
+
+- [x] **`credencial_en_url` exige usuario no vacío: `redis://:pass@host`
+  pasa limpio** — `src/garita/detectores/secretos.py:87`. Verificado y
+  reproducido al arrancar v0.9.0 (venía de la sección 2). Es la forma normal
+  de redis y memcached.
+
+- [x] **`buscar_asignaciones` corta en la primera credencial de la línea**
+  — `src/garita/detectores/secretos.py:248`. Verificado y reproducido al
+  arrancar v0.9.0 (venía de la sección 2): si la primera era un marcador, el
+  `continue` se tragaba la línea entera. Ahora `finditer`, la misma lección
+  que `buscar` ya documentaba.
 
 ### Detectores de país
 
@@ -113,11 +124,8 @@ hace stash y el escenario no existe).
   (`es.py:106`).
 
 **Falsos negativos de secretos**
-- `credencial_en_url` exige usuario no vacío: `redis://:pass@host` pasa
-  limpio (`secretos.py:87`).
-- `buscar_asignaciones` usa `search` y corta en la primera credencial por
-  línea; si esa primera es un marcador, el `continue` se traga la línea
-  entera con las credenciales reales que siguen (`secretos.py:248`).
+- *(Los dos de esta categoría se verificaron al arrancar v0.9.0 y subieron
+  a la sección 1, ya arreglados.)*
 
 **CLI y reportes**
 - `--salida` hacia un directorio inexistente truena con traceback y exit 1 —

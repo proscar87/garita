@@ -64,10 +64,18 @@ PATRONES: list[tuple[str, re.Pattern[str], str, str]] = [
         re.compile(
             r"\b("
             r"sb_secret_[A-Za-z0-9_-]{10,}"      # Supabase
-            r"|sk-[A-Za-z0-9]{20,}"               # OpenAI y similares
             r"|sk-ant-[A-Za-z0-9_-]{20,}"         # Anthropic
-            r"|ghp_[A-Za-z0-9]{36}"               # GitHub personal
+            # OpenAI vigente: los prefijos con guion. El `sk-` pelón de abajo
+            # se queda alfanumérico puro A PROPÓSITO: admitirle guiones haría
+            # casar clases CSS de esqueleto («sk-loading-spinner-grande»).
+            r"|sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}"
+            r"|sk-[A-Za-z0-9]{20,}"               # OpenAI legado y similares
+            # Stripe: sólo `_live_`. La de `_test_` aparece a propósito en
+            # media documentación del mundo y no toca dinero real.
+            r"|[sr]k_live_[A-Za-z0-9]{16,}"
+            r"|gh[opsur]_[A-Za-z0-9]{36}"         # GitHub: personal, OAuth, app…
             r"|github_pat_[A-Za-z0-9_]{22,}"      # GitHub fine-grained
+            r"|npm_[A-Za-z0-9]{36}"               # npm granular
             r"|AKIA[0-9A-Z]{16}"                  # AWS
             r"|AIza[0-9A-Za-z_-]{35}"             # Google
             r"|xox[baprs]-[A-Za-z0-9-]{10,}"      # Slack
@@ -82,9 +90,11 @@ PATRONES: list[tuple[str, re.Pattern[str], str, str]] = [
         "credencial_en_url",
         # Usuario y contraseña dentro de una URL de conexión. Es el formato en
         # que viajan las cadenas de base de datos y el que más se pega en un
-        # archivo de ejemplo "de momento".
+        # archivo de ejemplo "de momento". El usuario puede ser VACÍO:
+        # `redis://:contraseña@host` es la forma normal de redis y memcached,
+        # y exigir usuario la dejaba pasar limpia.
         re.compile(
-            r"\b[a-z][a-z0-9+.-]*://[^/\s:@]+:(?P<secreto>[^/\s:@]{6,})@[^\s/]+",
+            r"\b[a-z][a-z0-9+.-]*://[^/\s:@]*:(?P<secreto>[^/\s:@]{6,})@[^\s/]+",
             re.IGNORECASE,
         ),
         "Una cadena de conexión con contraseña embebida. Suele acabar en un "
@@ -108,12 +118,38 @@ PATRONES: list[tuple[str, re.Pattern[str], str, str]] = [
 # falso negativo y una causa de falsos positivos, porque tampoco se aplicaba
 # donde sí correspondía: `AKIAIOSFODNN7EXAMPLE`, la llave canónica de la
 # documentación de AWS, se marcaba por no casar con la frontera de palabra.
+#
+# LA SEGUNDA LECCIÓN: TAMPOCO VALE CUALQUIER SUBCADENA. El `.search` sin
+# fronteras descartaba «VirtualPass2024» como placeholder porque «Virtual»
+# contiene «tu». La regla que quedó: un marcador cuenta si NO está incrustado
+# entre letras (ver `_marcador_delimitado`) — así «7EXAMPLE» al final de la
+# llave de AWS sigue contando y el «tu» de «Virtual» ya no. Y «tu…»/«your…»
+# pegado a cualquier cosa sólo absuelve si ES el valor completo.
 MARCADORES = re.compile(
-    r"(?i)(tu[_-]?\w+|your[_-]?\w+|mi[_-]?(clave|llave|secreto)|xxx+|placeholder"
+    r"(?i)(tu[_-]\w+|your[_-]?\w+|mi[_-]?(clave|llave|secreto)|xxx+|placeholder"
     r"|cambiame|change[_-]?me"
     r"|ejemplo|example|dummy|fake|test[_-]?key|redacted|s3cr3t|hunter2"
-r"|lorem|ipsum|redacted|s3cr3t|hunter2)"
+    r"|lorem|ipsum)"
 )
+
+# «tuclave», «yourkey123»: sin separador sólo son marcador siendo el valor
+# entero. Dentro de un token largo, «tu» es subcadena de media base64.
+_POSESIVO_ES_TODO = re.compile(r"(?i)^[\W_]*(tu|your)[_-]?\w+[\W_\d]*$")
+
+
+def _marcador_delimitado(v: str) -> bool:
+    """¿Hay un marcador que no esté incrustado entre letras?
+
+    «AKIAIOSFODNN7EXAMPLE» sigue siendo ejemplo (el «EXAMPLE» va tras un
+    dígito y cierra el valor); «VirtualPass2024» ya no se descarta (su «tu»
+    vive dentro de «Virtual»).
+    """
+    for m in MARCADORES.finditer(v):
+        a, b = m.span()
+        if ((a == 0 or not v[a - 1].isalpha())
+                and (b == len(v) or not v[b].isalpha())):
+            return True
+    return False
 
 # Éstos sólo son marcador si constituyen casi todo el valor: «abcdef» dentro
 # de una llave aleatoria de cuarenta caracteres no la vuelve un ejemplo.
@@ -141,7 +177,8 @@ def es_marcador(valor: str) -> bool:
         v = d
     if not v or v.startswith("<") or v.startswith("${") or v.startswith("$("):
         return True
-    if MARCADORES.search(v) or _RELLENO.match(v) or _ES_TODO_MARCADOR.match(v):
+    if (_POSESIVO_ES_TODO.match(v) or _RELLENO.match(v)
+            or _ES_TODO_MARCADOR.match(v) or _marcador_delimitado(v)):
         return True
     # Un valor de un solo carácter repetido no es un secreto.
     nucleo = re.sub(r"[^A-Za-z0-9]", "", v)
@@ -245,25 +282,26 @@ NOMBRES_SOSPECHOSOS = re.compile(
 
 def buscar_asignaciones(texto: str, archivo: str) -> Iterator[Hallazgo]:
     for i, linea in enumerate(texto.splitlines(), 1):
-        m = NOMBRES_SOSPECHOSOS.search(linea)
-        if not m:
-            continue
-        valor = m.group(3)
-        # Una interpolación no es un secreto: es lo correcto.
-        if valor.startswith(("$", "process.env", "os.environ", "env.")):
-            continue
-        if es_marcador(valor):
-            continue
-        yield Hallazgo(
-            archivo=archivo, linea=i, detector="asignacion_sospechosa",
-            que=recortar(valor), severidad="aviso",
-            por_que=(
-                f"La variable «{m.group(1)}» está asignada a un valor literal "
-                f"largo. PUEDE ser una credencial: los formatos de proveedor "
-                f"son sólo una parte de lo que se filtra. Va como aviso "
-                f"porque es una sospecha, no una certeza — hay llaves "
-                f"públicas por diseño, como las de búsqueda."),
-            como_arreglar=(
-                "Si es un secreto, rótalo y muévelo al entorno. Si es público "
-                "a propósito, exenta el archivo con ese motivo."),
-        )
+        # `finditer`, no `search` — la misma lección que en `buscar`: si la
+        # primera asignación de la línea es un marcador, el `continue` no
+        # debe tragarse la credencial real que viene después.
+        for m in NOMBRES_SOSPECHOSOS.finditer(linea):
+            valor = m.group(3)
+            # Una interpolación no es un secreto: es lo correcto.
+            if valor.startswith(("$", "process.env", "os.environ", "env.")):
+                continue
+            if es_marcador(valor):
+                continue
+            yield Hallazgo(
+                archivo=archivo, linea=i, detector="asignacion_sospechosa",
+                que=recortar(valor), severidad="aviso",
+                por_que=(
+                    f"La variable «{m.group(1)}» está asignada a un valor "
+                    f"literal largo. PUEDE ser una credencial: los formatos "
+                    f"de proveedor son sólo una parte de lo que se filtra. "
+                    f"Va como aviso porque es una sospecha, no una certeza — "
+                    f"hay llaves públicas por diseño, como las de búsqueda."),
+                como_arreglar=(
+                    "Si es un secreto, rótalo y muévelo al entorno. Si es "
+                    "público a propósito, exenta el archivo con ese motivo."),
+            )
