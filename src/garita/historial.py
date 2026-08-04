@@ -47,8 +47,8 @@ from pathlib import Path
 from typing import Iterable
 
 from .nucleo import (
-    ARCHIVOS_DE_REGISTRO_PUBLICO, DETECTORES_RELAJADOS_EN_PRUEBAS, MAX_BYTES,
-    Detector, Exencion, Hallazgo, descifrar, es_de_prueba, ruta_revisable,
+    MAX_BYTES, Detector, Exencion, Hallazgo, descifrar, filtrar_por_ruta,
+    ruta_revisable,
 )
 
 # Cuántos blobs se piden por tanda a `git cat-file --batch`. Las peticiones
@@ -96,19 +96,48 @@ def _git(raiz: Path, *args: str) -> bytes:
     ).stdout
 
 
-def _blobs_del_historial(raiz: Path) -> dict[str, str]:
-    """Cada blob alcanzable desde ramas y tags, con una ruta de ejemplo.
+def es_somero(raiz: Path) -> bool:
+    """¿El clon es shallow? Un clon somero no trae la historia, y auditar
+    la parte visible para decir «limpio» es aprobar sin revisar."""
+    salida = _git(raiz, "rev-parse", "--is-shallow-repository")
+    return salida.decode("utf-8", "replace").strip() == "true"
 
-    `rev-list --objects` ya deduplica: cada objeto sale una vez, con la
-    primera ruta donde se le vio. Los commits y árboles se filtran después
-    con `cat-file --batch-check`, que además trae el tamaño.
+
+def _blobs_del_historial(raiz: Path) -> dict[str, list[str]]:
+    """Cada blob alcanzable desde ramas y tags, con TODAS sus rutas.
+
+    Todas y no la primera, a propósito: el mismo contenido puede vivir en
+    `src/secreto.pem` y en `fixtures/ejemplo.pem` (mismo blob, un solo
+    SHA), y si la ruta única resultara ser la del fixture, la copia
+    «inocente» absolvería a la original. La regla es la contraria: un blob
+    se perdona sólo si TODAS sus rutas lo perdonan.
+
+    `rev-list --objects` no basta: deduplica por OBJETO, así que el blob
+    sale una sola vez con la primera ruta donde se le vio y las demás ni
+    aparecen. Las rutas restantes se juntan de `git log --raw`, que lista
+    cada cambio con su blob y su ruta — la copia a `fixtures/` es un
+    cambio como cualquiera. Los commits y árboles se filtran después con
+    `cat-file --batch-check`, que además trae el tamaño.
     """
     crudo = _git(raiz, "rev-list", "--objects", "--branches", "--tags")
-    blobs: dict[str, str] = {}
+    blobs: dict[str, list[str]] = {}
     for linea in crudo.decode("utf-8", "replace").splitlines():
         sha, _, ruta = linea.partition(" ")
         if ruta:  # los commits vienen sin ruta; los árboles se filtran luego
-            blobs.setdefault(sha, ruta)
+            blobs.setdefault(sha, [ruta])
+
+    crudo = _git(raiz, "log", "--branches", "--tags", "--raw", "--no-abbrev",
+                 "--format=")
+    for linea in crudo.decode("utf-8", "replace").splitlines():
+        if not linea.startswith(":"):
+            continue
+        # :modo_viejo modo_nuevo sha_viejo sha_nuevo estado\truta
+        partes = linea.split("\t")
+        campos = partes[0].split()
+        if len(campos) >= 5 and campos[3] in blobs:
+            rutas = blobs[campos[3]]
+            if partes[-1] not in rutas:
+                rutas.append(partes[-1])
     return blobs
 
 
@@ -214,15 +243,16 @@ def revisar_historial(
 
     revisables: list[str] = []
     for sha, tam in tamanos.items():
-        ruta = blobs[sha]
-        ok, _motivo = ruta_revisable(Path(ruta))
-        if not ok:
+        # Basta con que UNA ruta sea revisable: si el mismo contenido vivió
+        # como `datos.csv` y como `datos.svg`, la extensión sin datos no
+        # absuelve a la copia que sí se llama como un archivo de datos.
+        if not any(ruta_revisable(Path(r))[0] for r in blobs[sha]):
             res.blobs_omitidos += 1
             continue
         if tam > MAX_BYTES:
             res.blobs_omitidos += 1
             res.omitidos_grandes.append(
-                (f"{ruta} ({sha[:8]})",
+                (f"{blobs[sha][0]} ({sha[:8]})",
                  f"pesa {tam // 1_000_000} MB, más del tope de "
                  f"{MAX_BYTES // 1_000_000} MB"))
             continue
@@ -235,21 +265,35 @@ def revisar_historial(
             res.blobs_omitidos += 1
             continue
         res.blobs_revisados += 1
-        ruta = blobs[sha]
-        en_pruebas = es_de_prueba(ruta)
-        registro_publico = Path(ruta).name in ARCHIVOS_DE_REGISTRO_PUBLICO
+        rutas = blobs[sha]
         for det in dets:
-            cubierto = next((e for e in exen if e.cubre(ruta, det.nombre)), None)
-            if cubierto is not None:
-                res.exentos_aplicados[cubierto.patron] = (
-                    res.exentos_aplicados.get(cubierto.patron, 0) + 1)
+            # Exenciones y filtros de ruta se evalúan por CADA ruta del
+            # blob, y el blob se perdona sólo si todas lo perdonan. El
+            # contenido se busca una sola vez — es el mismo blob — y cada
+            # hallazgo se queda con su versión más severa entre las rutas
+            # que no lo suprimen.
+            activas = []
+            for ruta in rutas:
+                cubierto = next(
+                    (e for e in exen if e.cubre(ruta, det.nombre)), None)
+                if cubierto is not None:
+                    res.exentos_aplicados[cubierto.patron] = (
+                        res.exentos_aplicados.get(cubierto.patron, 0) + 1)
+                else:
+                    activas.append(ruta)
+            if not activas:
                 continue
-            for h in det.buscar(texto, ruta):
-                if en_pruebas and h.detector in DETECTORES_RELAJADOS_EN_PRUEBAS:
-                    continue
-                if registro_publico and h.detector not in DETECTORES_RELAJADOS_EN_PRUEBAS:
-                    continue
-                sucios.setdefault(sha, []).append(h)
+            for h in det.buscar(texto, activas[0]):
+                mejor: Hallazgo | None = None
+                for ruta in activas:
+                    filtrado = filtrar_por_ruta(h, ruta)
+                    if filtrado is None:
+                        continue
+                    if mejor is None or (filtrado.severidad == "error"
+                                         and mejor.severidad != "error"):
+                        mejor = filtrado
+                if mejor is not None:
+                    sucios.setdefault(sha, []).append(mejor)
 
     if not sucios:
         return res
@@ -258,7 +302,7 @@ def revisar_historial(
     vivos = _vivos_en_head(raiz)
     grupos: dict[tuple, HallazgoHistorico] = {}
     for sha, hallazgos in sucios.items():
-        commit, fecha, ruta_origen = origen.get(sha, ("?", "?", blobs[sha]))
+        commit, fecha, ruta_origen = origen.get(sha, ("?", "?", blobs[sha][0]))
         for h in hallazgos:
             # La ruta del reporte es la del commit que lo introdujo: es la
             # que quien va a limpiar tiene que buscar en el historial.

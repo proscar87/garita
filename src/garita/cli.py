@@ -34,7 +34,7 @@ from .linea_base import (
     construir as construir_linea_base,
     guardar as guardar_linea_base,
 )
-from .historial import revisar_historial
+from .historial import es_somero, revisar_historial
 from .nucleo import revisar
 from .reporte import (
     anotaciones_github, imprimir, imprimir_historial, resumen_markdown,
@@ -189,6 +189,34 @@ def main(argv: list[str] | None = None) -> int:
                   f"  {e}", file=sys.stderr)
             return 2
 
+    if args.archivos:
+        # Las rutas se verifican ANTES de revisar. Un nombre mal tecleado en
+        # la config del hook se contaba como «omitido» y Garita aprobaba con
+        # 0 — una marca verde sin revisión, el peor modo de falla. Se
+        # resuelven contra el directorio actual (pre-commit invoca desde la
+        # raíz; un humano, desde donde esté) y se relativizan a la raíz del
+        # repositorio, que es el idioma de las exenciones y la línea base.
+        raiz_real = raiz.resolve()
+        normalizados: list[str] = []
+        for pedido in args.archivos:
+            ruta = Path(pedido).resolve()
+            try:
+                rel = ruta.relative_to(raiz_real)
+            except ValueError:
+                print(f"Garita: «{pedido}» queda fuera del repositorio "
+                      f"({raiz}). Sus hallazgos escaparían a las exenciones "
+                      f"y a la línea base, que hablan en rutas del repo.",
+                      file=sys.stderr)
+                return 2
+            if not ruta.is_file():
+                print(f"Garita: no existe el archivo «{pedido}». No se "
+                      f"omite en silencio: aprobar sin revisar lo que se "
+                      f"pidió es una marca verde sin revisión.",
+                      file=sys.stderr)
+                return 2
+            normalizados.append(rel.as_posix())
+        args.archivos = normalizados
+
     res = revisar(
         raiz, detectores, cfg.exenciones,
         archivos=args.archivos or None,
@@ -236,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
         with open(resumen, "a", encoding="utf-8") as f:
             f.write(resumen_markdown(res, base=base, nuevos=nuevos,
                                      conocidos=conocidos))
+    _salida_de_action(len(nuevos))
 
     # Sólo lo nuevo decide el código de salida; la deuda aceptada ya se
     # imprimió aparte y no reprueba.
@@ -244,6 +273,18 @@ def main(argv: list[str] | None = None) -> int:
     if cfg.fallar_en_aviso and any(h.severidad == "aviso" for h in nuevos):
         return 1
     return 0
+
+
+def _salida_de_action(hallazgos: int) -> None:
+    """La salida `hallazgos` que la Action declara. Vive aquí y no en el
+    envoltorio de la Action porque el conteo vive aquí: el envoltorio sólo
+    ve el código de salida, y una salida documentada que siempre llega
+    vacía es una opción inoperante — la clase de bug que ya se pagó una
+    vez con el input `config`."""
+    destino = os.environ.get("GITHUB_OUTPUT")
+    if destino:
+        with open(destino, "a", encoding="utf-8") as f:
+            f.write(f"hallazgos={hallazgos}\n")
 
 
 def _historial(args, cfg, detectores, raiz: Path) -> int:
@@ -261,6 +302,18 @@ def _historial(args, cfg, detectores, raiz: Path) -> int:
         print("Garita: la línea base no aplica al historial. La deuda "
               "aceptada congela el PRESENTE; la auditoría del pasado no "
               "perdona, porque perdonar ahí es no auditar.", file=sys.stderr)
+        return 2
+    if es_somero(raiz):
+        # El default de actions/checkout es --depth 1: el entorno MÁS
+        # probable de la auditoría es justo donde git no trae la historia.
+        # Auditar lo poco visible y decir «limpio» es peor que no auditar.
+        print("Garita: este clon es somero (shallow) y git no trae el "
+              "historial completo; un secreto borrado hace meses sería "
+              "invisible y el «limpio» sería mentira. Trae la historia "
+              "entera antes de auditar:\n"
+              "  git fetch --unshallow\n"
+              "  (en GitHub Actions: fetch-depth: 0 en actions/checkout)",
+              file=sys.stderr)
         return 2
     res = revisar_historial(raiz, detectores, cfg.exenciones)
 
@@ -284,6 +337,7 @@ def _historial(args, cfg, detectores, raiz: Path) -> int:
     else:
         imprimir_historial(res)
 
+    _salida_de_action(len(res.hallazgos))
     if res.errores:
         return 1
     if res.avisos and cfg.fallar_en_aviso:

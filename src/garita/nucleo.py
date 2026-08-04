@@ -26,7 +26,7 @@ import fnmatch
 import re
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Iterable, Iterator
 
@@ -78,8 +78,17 @@ EXTENSIONES_BINARIAS = {
 # detectores de material criptográfico, que es lo que legítimamente vive ahí.
 RUTAS_DE_PRUEBA = re.compile(
     r"(^|/)(tests?|testdata|test_data|fixtures?|__snapshots__|__fixtures__"
-    r"|spec|specs|examples?|ejemplos?|mocks?|stubs?|testing)(/|$)"
+    r"|spec|specs|mocks?|stubs?|testing)(/|$)"
 )
+# Las carpetas de EJEMPLO no van con las de prueba, a propósito. Un fixture
+# de pruebas se genera; un ejemplo se ESCRIBE, y la mitad de las fugas
+# reales son el archivo de ejemplo que alguien llenó con valores verdaderos
+# «de momento». Suprimir ahí las credenciales era regalar justo ese caso.
+# Tampoco se reportan como error: el primer día de un repo con ejemplos
+# legítimos sería rojo, y ese día alguien desactiva el paso. Se degradan a
+# aviso: suenan, no reprueban, y quien tenga ejemplos inventados los exenta
+# con su motivo.
+RUTAS_DE_EJEMPLO = re.compile(r"(^|/)(examples?|ejemplos?)(/|$)")
 # También por NOMBRE de archivo, no sólo por carpeta: `test_requests.py`
 # vivió años en la raíz de requests, y las 258 credenciales de broma de sus
 # versiones históricas son la prueba de que la carpeta no basta.
@@ -97,6 +106,10 @@ def es_de_prueba(rel: str) -> bool:
     return bool(RUTAS_DE_PRUEBA.search(rel) or ARCHIVOS_DE_PRUEBA.search(rel))
 
 
+def es_de_ejemplo(rel: str) -> bool:
+    return bool(RUTAS_DE_EJEMPLO.search(rel))
+
+
 # Registros públicos: archivos cuyo contenido es un catálogo publicado a
 # propósito. El caso concreto: los bundles de autoridades certificadoras
 # traen el CIF real de Camerfirma en el asunto de sus certificados — es
@@ -107,6 +120,25 @@ def es_de_prueba(rel: str) -> bool:
 ARCHIVOS_DE_REGISTRO_PUBLICO = {
     "cacert.pem", "ca-bundle.crt", "ca-bundle.pem", "ca-certificates.crt",
 }
+
+
+def filtrar_por_ruta(h: Hallazgo, rel: str) -> Hallazgo | None:
+    """Las reglas de ruta, en un solo lugar: pruebas, ejemplos y registros
+    públicos. Devuelve el hallazgo (quizá degradado a aviso) o None si la
+    ruta lo suprime. El motor normal y el del historial pasan por aquí:
+    dos motores con reglas distintas darían dos verdades distintas."""
+    if h.detector in DETECTORES_RELAJADOS_EN_PRUEBAS:
+        if es_de_prueba(rel):
+            return None
+        if es_de_ejemplo(rel) and h.severidad == "error":
+            return replace(
+                h, severidad="aviso",
+                por_que=h.por_que + " Está en una ruta de ejemplo: si el "
+                "valor es inventado, exenta el archivo con ese motivo; si "
+                "es real, es una fuga con instrucciones de uso.")
+    elif Path(rel).name in ARCHIVOS_DE_REGISTRO_PUBLICO:
+        return None
+    return h
 
 # Formatos que no contienen datos aunque sean texto: tipografías vectoriales,
 # diagramas. Sus coordenadas producen cadenas numéricas indistinguibles de un
@@ -297,8 +329,6 @@ def revisar(
             if fnmatch.fnmatch(rel, e.patron):
                 patrones_vistos.add(e.patron)
 
-        en_pruebas = es_de_prueba(rel)
-        registro_publico = ruta.name in ARCHIVOS_DE_REGISTRO_PUBLICO
         for det in dets:
             cubierto = next((e for e in exen if e.cubre(rel, det.nombre)), None)
             if cubierto is not None:
@@ -311,11 +341,9 @@ def revisar(
                 # el nombre del detector: `secretos` produce hallazgos de
                 # `llave_privada`, `jwt` y demás, y sólo algunos se relajan en
                 # rutas de prueba.
-                if en_pruebas and h.detector in DETECTORES_RELAJADOS_EN_PRUEBAS:
-                    continue
-                if registro_publico and h.detector not in DETECTORES_RELAJADOS_EN_PRUEBAS:
-                    continue
-                res.hallazgos.append(h)
+                filtrado = filtrar_por_ruta(h, rel)
+                if filtrado is not None:
+                    res.hallazgos.append(filtrado)
 
     # Una exención que nunca se aplicó apunta a un archivo que ya no existe o
     # que se renombró. En el segundo caso la exención se cayó sin avisar y el

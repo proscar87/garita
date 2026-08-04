@@ -1088,6 +1088,153 @@ class Historial(unittest.TestCase):
             self.assertIn("volcado.csv", salida)
 
 
+class ElVeredictoNoMiente(unittest.TestCase):
+    """Los modos de falla donde Garita aprobaba sin haber revisado: la
+    marca verde sin revisión, que es peor que cualquier falso positivo."""
+
+    def test_archivo_inexistente_es_codigo_2_no_0(self):
+        # `garita archibo_mal_tecleado.py` decía «✓ nada que reportar…
+        # 1 omitidos (binarios o muy grandes)» y aprobaba. El hook entero
+        # podía llevar meses aprobando un nombre mal escrito en su config.
+        td = repo_temporal({"real.py": "x = 1\n"})
+        with td:
+            codigo, salida = correr_garita(Path(td.name), "no_existe.py")
+            self.assertEqual(codigo, 2, salida)
+            self.assertIn("no_existe.py", salida)
+            self.assertNotIn("nada que reportar", salida)
+
+    def test_ruta_fuera_del_repo_es_codigo_2(self):
+        # Una ruta absoluta de fuera sí se revisaba (pathlib descarta la
+        # raíz al concatenar absolutas) pero sus hallazgos escapaban a las
+        # exenciones y a la línea base, que hablan en rutas del repo.
+        td = repo_temporal({"real.py": "x = 1\n"})
+        ajeno = tempfile.NamedTemporaryFile(suffix=".py", delete=False)
+        ajeno.close()
+        try:
+            with td:
+                codigo, salida = correr_garita(Path(td.name), ajeno.name)
+                self.assertEqual(codigo, 2, salida)
+                self.assertIn("fuera del repositorio", salida)
+        finally:
+            os.unlink(ajeno.name)
+
+    def test_ruta_absoluta_de_dentro_se_normaliza(self):
+        # La misma invocación no puede aprobar con ruta relativa y reprobar
+        # con la absoluta equivalente: se normaliza al idioma del repo.
+        td = repo_temporal({
+            "datos.py": "curp: AABB900101HDFCDF09\n",
+            ".garita.yml": ("exenciones:\n"
+                            "  - archivo: datos.py\n"
+                            "    motivo: sintetico de demo\n"),
+        })
+        with td:
+            raiz = Path(td.name)
+            codigo_rel, _ = correr_garita(raiz, "datos.py")
+            codigo_abs, salida = correr_garita(raiz, str(raiz / "datos.py"))
+            self.assertEqual((codigo_rel, codigo_abs), (0, 0), salida)
+
+    def test_historial_en_clon_somero_es_codigo_2(self):
+        # El default de actions/checkout es --depth 1: la auditoría corría
+        # sobre el pedazo visible y decía «historial limpio».
+        td = TemporaryDirectory()
+        with td:
+            base = Path(td.name) / "origen"
+            base.mkdir()
+            subprocess.run(["git", "init", "-q", "-b", "main"],
+                           cwd=base, check=True)
+            (base / "secreto.py").write_text(
+                "curp: AABB900101HDFCDF09\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=base, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c",
+                            "user.email=t@t", "commit", "-q", "-m", "uno"],
+                           cwd=base, check=True)
+            subprocess.run(["git", "rm", "-q", "secreto.py"],
+                           cwd=base, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c",
+                            "user.email=t@t", "commit", "-q", "-m", "dos"],
+                           cwd=base, check=True)
+            clon = Path(td.name) / "somero"
+            subprocess.run(["git", "clone", "-q", "--depth", "1",
+                            f"file://{base}", str(clon)],
+                           check=True, capture_output=True)
+            codigo, salida = correr_garita(clon, "--historial")
+            self.assertEqual(codigo, 2, salida)
+            self.assertIn("somero", salida)
+            self.assertIn("fetch-depth: 0", salida)
+            self.assertNotIn("historial está limpio", salida)
+
+    def test_copia_en_fixtures_no_absuelve_al_secreto_de_src(self):
+        # Mismo contenido = mismo blob. Si la única ruta registrada era la
+        # del fixture, la copia «inocente» absolvía a la original.
+        llave = ("-----BEGIN RSA PRIVATE KEY-----\n"
+                 "MIIEowIBAAKCAQEA7bq8s2Kx9mPqR2vNw8Kx9mPqR2vNw8Kx\n"
+                 "-----END RSA PRIVATE KEY-----\n")
+        td = TemporaryDirectory()
+        with td:
+            raiz = Path(td.name)
+            subprocess.run(["git", "init", "-q", "-b", "main"],
+                           cwd=raiz, check=True)
+            (raiz / "fixtures").mkdir()
+            (raiz / "fixtures" / "ejemplo.pem").write_text(
+                llave, encoding="utf-8")
+            (raiz / "src").mkdir()
+            (raiz / "src" / "secreto.pem").write_text(llave, encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c",
+                            "user.email=t@t", "commit", "-q", "-m", "uno"],
+                           cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz, "--historial")
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("llave", salida)
+
+    def test_credencial_en_examples_suena_como_aviso(self):
+        # La mitad de las fugas reales son el archivo de ejemplo que alguien
+        # llenó con valores verdaderos. Antes se suprimía sin dejar rastro;
+        # ahora suena como aviso: no reprueba, pero tampoco calla.
+        td = repo_temporal({
+            "examples/config.yml":
+                'db = "postgres://admin:Kx9mPqR2vNw8@h:5432/d"\n',
+        })
+        with td:
+            raiz = Path(td.name)
+            cfg = cargar_config(raiz)
+            res = revisar(raiz, construir(cfg, raiz), cfg.exenciones)
+            self.assertEqual(len(res.errores), 0, res.hallazgos)
+            avisos = {h.detector for h in res.avisos}
+            self.assertIn("credencial_en_url", avisos)
+
+    def test_en_tests_la_relajacion_sigue_intacta(self):
+        # La relajación en rutas de PRUEBA es intencional y se queda: los
+        # fixtures de TLS versionados son el pan de cada día.
+        td = repo_temporal({
+            "tests/config.yml":
+                'db = "postgres://admin:Kx9mPqR2vNw8@h:5432/d"\n',
+        })
+        with td:
+            raiz = Path(td.name)
+            cfg = cargar_config(raiz)
+            res = revisar(raiz, construir(cfg, raiz), cfg.exenciones)
+            self.assertEqual(len(res.hallazgos), 0, res.hallazgos)
+
+    def test_la_action_escribe_su_salida(self):
+        # action.yml declara `hallazgos` y el README la documenta; nadie la
+        # escribía y todo workflow que la usara recibía cadena vacía.
+        td = repo_temporal({"datos.py": "curp: AABB900101HDFCDF09\n"})
+        destino = tempfile.NamedTemporaryFile(delete=False)
+        destino.close()
+        try:
+            with td:
+                os.environ["GITHUB_OUTPUT"] = destino.name
+                try:
+                    correr_garita(Path(td.name))
+                finally:
+                    del os.environ["GITHUB_OUTPUT"]
+                contenido = Path(destino.name).read_text(encoding="utf-8")
+                self.assertIn("hallazgos=1", contenido)
+        finally:
+            os.unlink(destino.name)
+
+
 class RegresionesDelHistorial(unittest.TestCase):
     """Falsos positivos que salieron al auditar historiales completos de
     proyectos reales (requests: 307 antes de esto, 5 después). El pasado de
