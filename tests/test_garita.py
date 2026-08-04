@@ -1040,15 +1040,37 @@ class Historial(unittest.TestCase):
             self.assertNotIn("secreto.py", salida)
             self.assertIn("vivo.csv", salida)  # el resto sigue vivo
 
-    def test_no_admite_archivos_sueltos_ni_linea_base_ni_sarif(self):
+    def test_no_admite_archivos_sueltos_ni_linea_base(self):
         td, raiz = self._repo()
         with td:
             for argv in (("--historial", "limpio.py"),
                          ("--historial", "--linea-base"),
-                         ("--historial", "--sin-linea-base"),
-                         ("--historial", "--formato", "sarif")):
+                         ("--historial", "--sin-linea-base")):
                 codigo, salida = correr_garita(raiz, *argv)
                 self.assertEqual(codigo, 2, (argv, salida))
+
+    def test_historial_habla_sarif(self):
+        # La alerta apunta a la ruta HISTÓRICA (que puede ya no existir) y
+        # el mensaje carga el commit; la huella es commit+ruta+regla+ordinal
+        # — el historial es inmutable, así que identifica al hallazgo para
+        # siempre sin derivar nada del valor.
+        td, raiz = self._repo()
+        with td:
+            codigo, salida = correr_garita(raiz, "--historial",
+                                           "--formato", "sarif")
+            self.assertEqual(codigo, 1, salida)
+            doc = json.loads(salida)
+            self.assertEqual(doc["version"], "2.1.0")
+            resultados = doc["runs"][0]["results"]
+            muerto = next(r for r in resultados
+                          if r["locations"][0]["physicalLocation"]
+                          ["artifactLocation"]["uri"] == "secreto.py")
+            self.assertIn("SÓLO EN EL HISTORIAL", muerto["message"]["text"])
+            self.assertIn("commit", muerto["message"]["text"])
+            huella = muerto["partialFingerprints"]["garitaHistorial/v1"]
+            self.assertIn("secreto.py::curp", huella)
+            for i in range(len(self.CURP) - 5):
+                self.assertNotIn(self.CURP[i:i + 6], salida)
 
     def test_blob_grande_del_pasado_se_dice_no_se_calla(self):
         td = TemporaryDirectory()

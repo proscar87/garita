@@ -103,3 +103,74 @@ def generar(res: Resultado, detectores, conocidos=()) -> dict:
             "results": resultados,
         }],
     }
+
+
+def generar_historial(res, detectores) -> dict:
+    """SARIF de una auditoría de historial.
+
+    La diferencia con el del árbol está en dos decisiones:
+
+    1. **La ruta puede no existir en HEAD** — y está bien. La alerta apunta
+       a la ruta del commit que introdujo el dato, que es la que quien va a
+       limpiar tiene que buscar; el mensaje carga el commit y la fecha, y
+       si el archivo ya se borró lo dice: borrar el archivo no borró nada.
+
+    2. **La huella no usa la línea ni el valor.** El historial es inmutable,
+       así que `commit + ruta + regla + ordinal` identifica el hallazgo para
+       siempre — y no deriva nada del dato, la misma regla de siempre.
+    """
+    reglas = {d.nombre: d.descripcion for d in detectores}
+    for hh in res.hallazgos:
+        reglas.setdefault(hh.hallazgo.detector, "")
+
+    ordinales: dict[tuple[str, str, str], int] = defaultdict(int)
+    resultados = []
+    for hh in sorted(res.hallazgos,
+                     key=lambda x: (x.hallazgo.archivo, x.hallazgo.detector,
+                                    x.commit, x.hallazgo.linea)):
+        h = hh.hallazgo
+        clave = (hh.commit, h.archivo, h.detector)
+        n = ordinales[clave]
+        ordinales[clave] += 1
+        estado = ("todavía en el árbol" if hh.vivo else
+                  "SÓLO EN EL HISTORIAL: el archivo ya no existe, el dato sí "
+                  "— vive en cada clon y cada fork")
+        duracion = (f"; duró {hh.versiones} versiones del archivo"
+                    if hh.versiones > 1 else "")
+        texto = (f"[{estado}] {h.que} — {h.por_que} Entró en el commit "
+                 f"{hh.commit} ({hh.fecha}){duracion}. → {h.como_arreglar}")
+        resultados.append({
+            "ruleId": h.detector,
+            "level": "error" if h.severidad == "error" else "warning",
+            "message": {"text": texto},
+            "locations": [{
+                "physicalLocation": {
+                    "artifactLocation": {"uri": h.archivo},
+                    "region": {"startLine": h.linea},
+                },
+            }],
+            "partialFingerprints": {
+                "garitaHistorial/v1":
+                    f"{hh.commit}::{h.archivo}::{h.detector}::{n}",
+            },
+        })
+
+    return {
+        "$schema": ESQUEMA,
+        "version": VERSION_SARIF,
+        "runs": [{
+            "tool": {
+                "driver": {
+                    "name": "Garita (historial)",
+                    "version": __version__,
+                    "informationUri": "https://github.com/proscar87/garita",
+                    "rules": [
+                        {"id": nombre,
+                         "shortDescription": {"text": descripcion or nombre}}
+                        for nombre, descripcion in sorted(reglas.items())
+                    ],
+                },
+            },
+            "results": resultados,
+        }],
+    }
