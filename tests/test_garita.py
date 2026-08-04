@@ -1352,3 +1352,54 @@ class PaisesNuevos(unittest.TestCase):
         self.assertFalse(list(d.buscar(
             "quedó sin 730 425 618 pesos en la cuenta", "x")))
         self.assertTrue(list(d.buscar("SIN 730 425 618", "x")))
+
+
+class FuentesOpcionales(unittest.TestCase):
+    """El prefijo «?»: una lista que vive gitignoreada en las máquinas que
+    la necesitan (la lista de clientes de un repo de consultoría, que
+    volver a escribir en el repo re-filtraría los nombres). Ausente se
+    tolera AVISANDO; rota truena igual que siempre."""
+
+    def test_ausente_avisa_y_no_truena(self):
+        td = repo_temporal({
+            "x.md": "AcmeCorp por todos lados\n",
+            ".garita.yml": "clientes:\n  - '?clientes.txt'\n",
+        })
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 0, salida)
+            self.assertIn("lista opcional", salida)
+            self.assertIn("clientes.txt", salida)
+
+    def test_presente_funciona_igual(self):
+        td = repo_temporal({
+            "x.md": "el caso AcmeCorp\n",
+            "clientes.txt": "AcmeCorp\n",
+            ".garita.yml": ("clientes:\n  - '?clientes.txt'\n"
+                            "exenciones:\n  - archivo: clientes.txt\n"
+                            "    motivo: fuente de la lista\n"
+                            "    detectores: cliente\n"),
+        })
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 1, salida)
+            self.assertNotIn("lista opcional", salida)
+
+    def test_presente_pero_rota_truena(self):
+        # Opcional tolera la ausencia, jamás la corrupción: aprobar con la
+        # lista que se creyó leer aprobaría hallazgos nuevos.
+        td = repo_temporal({
+            "clientes.txt": "",
+            ".garita.yml": "clientes:\n  - '?clientes.txt'\n",
+        })
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 2, salida)
+
+    def test_obligatoria_ausente_sigue_tronando(self):
+        td = repo_temporal({
+            ".garita.yml": "clientes:\n  - clientes.txt\n",
+        })
+        with td:
+            codigo, _ = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 2)

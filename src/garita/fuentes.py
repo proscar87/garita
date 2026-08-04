@@ -127,6 +127,17 @@ def _normalizar(valor: object, origen: str) -> list[str]:
     return sorted(set(fuera))
 
 
+def existe(spec: str, raiz: Path) -> bool:
+    """¿El archivo de la fuente está en esta máquina?
+
+    Existe para las fuentes OPCIONALES (prefijo «?» en la configuración):
+    la ausencia se tolera avisando, pero sólo la ausencia — un archivo
+    presente y roto sigue tronando, porque opcional no es perdonado.
+    """
+    rel = spec.rsplit(":", 1)[0] if ":" in spec else spec
+    return (raiz / rel).is_file()
+
+
 def cargar(spec: str, raiz: Path) -> list[str]:
     """Carga una lista desde una especificación de la configuración.
 

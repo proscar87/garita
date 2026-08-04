@@ -91,6 +91,13 @@ que lo identifique (nombre, dominio, serial de su appliance) y el detector
 sector. Nació de un caso real: un case study que nombraba al cliente en un
 repo cuya propia convención era el alias.
 
+El prefijo **`?`** marca la fuente como **opcional**: si el archivo no está
+en la máquina, Garita avisa por stderr y sigue sin ese detector, en vez de
+tronar. Existe para la lista que debe vivir **gitignoreada**: escribir los
+nombres de tus clientes en el propio repo re-filtraría exactamente lo que
+quieres bloquear. Opcional tolera la ausencia, jamás la corrupción: un
+archivo presente y roto truena igual que siempre.
+
 ---
 
 ## ¿Tu país no está?
@@ -138,7 +145,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.5.0
+    rev: v0.5.1
     hooks:
       - id: garita
 ```
@@ -318,7 +325,7 @@ nombres:
   - scripts/generar_datos_sinteticos.py:PROHIBIDOS
 
 clientes:
-  - clientes.txt        # nombres, dominios o seriales — uno por línea
+  - '?clientes.txt'     # nombres, dominios o seriales — uno por línea
 
 detectores:
   - nss: false          # apágalo si tu proyecto no toca IMSS
@@ -468,7 +475,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.5.0
+    rev: v0.5.1
     hooks:
       - id: garita
 ```
