@@ -47,6 +47,23 @@ def dentro_de_un_numero(linea: str, ini: int, fin: int) -> bool:
     return len(_ES_NUMERO.findall(ventana)) >= 3
 
 
+def dentro_de_url(linea: str, ini: int) -> bool:
+    """¿La coincidencia vive dentro de una URL?
+
+    Los CDN y las wikis cargan tiras de dígitos que validan por azar: un
+    identificador de foto de Instagram pasa el módulo de la CLABE y un
+    cache-buster pasa el del CNPJ. Dentro de una URL el hallazgo BAJA A
+    AVISO — no se calla, porque una CLABE en la ruta de un API sí puede
+    ser una fuga real, y cegarse está prohibido. Pero tampoco grita: en
+    datos raspados de internet, un error por cada foto es la clase de
+    ruido que desinstala guardianes."""
+    pedazo = linea[:ini]
+    corte = max(pedazo.rfind(" "), pedazo.rfind("\t"),
+                pedazo.rfind("'"), pedazo.rfind('"'), pedazo.rfind("<"))
+    token = pedazo[corte + 1:]
+    return "://" in token or token.startswith("www.")
+
+
 def limpio(v: str) -> str:
     return SEPARADORES.sub("", v).upper()
 
@@ -110,5 +127,6 @@ def buscador(
                     con_formato = bool(re.search(r"[-\s/]", bruto.strip()))
                     if not (con_formato or hay_contexto):
                         continue
-                yield hallazgo(archivo, i, detector, v, por_que)
+                sev = "aviso" if dentro_de_url(linea, m.start()) else "error"
+                yield hallazgo(archivo, i, detector, v, por_que, severidad=sev)
     return buscar
