@@ -303,17 +303,20 @@ def _buscar_rfc(texto: str, archivo: str) -> Iterator[Hallazgo]:
 def _buscar_clabe(texto: str, archivo: str) -> Iterator[Hallazgo]:
     for i, linea in enumerate(texto.splitlines(), 1):
         for m in _CLABE.finditer(linea):
-            from ._comun import dentro_de_un_numero
+            from ._comun import dentro_de_un_numero, dentro_de_url
             if dentro_de_un_numero(linea, m.start(), m.end()):
                 continue
             v = _SEPARADORES.sub("", m.group(0))
             if (v in CLABE_DE_MUESTRA or not clabe_valida(v)
                     or _clabe_es_relleno(v) or not _banco_existe(v)):
                 continue
-            yield _hallazgo(archivo, i, "clabe", v,
-                            "Es una CLABE con dígito de control válido. "
-                            "Basta para depositar en esa cuenta y, con ella, "
-                            "para intentar cargos.")
+            h = _hallazgo(archivo, i, "clabe", v,
+                          "Es una CLABE con dígito de control válido. "
+                          "Basta para depositar en esa cuenta y, con ella, "
+                          "para intentar cargos.")
+            if dentro_de_url(linea, m.start()):
+                h = Hallazgo(**{**h.__dict__, "severidad": "aviso"})
+            yield h
 
 
 def _buscar_nss(texto: str, archivo: str) -> Iterator[Hallazgo]:

@@ -88,11 +88,19 @@ def detectores(cfg: Config) -> list[Detector]:
                 contexto=re.compile(r"(?i)\bcpf\b"),
                 exige_refuerzo=True)))
     if cfg.activo("cnpj"):
+        # La misma medicina que el CPF, por otra enfermedad: catorce
+        # dígitos pelones también son una marca de tiempo — un timestamp
+        # del Wayback Machine pasó el doble módulo 11 en un repo real.
+        # Con la puntuación oficial dispara solo; a los dígitos corridos
+        # se les exige la palabra que los nombre. (El vector vive en las
+        # pruebas: citarlo aquí haría que Garita se encontrara a sí misma.)
         d.append(Detector(
             nombre="cnpj", descripcion="CNPJ brasileño, incluido el alfanumérico de 2026",
             buscar=buscador(
                 _CNPJ, cnpj_valido, "cnpj",
                 "Es un CNPJ válido. Identifica a una empresa; no es dato "
                 "personal, pero suele venir acompañado de quien la representa.",
-                exentos=EXENTOS_CNPJ)))
+                exentos=EXENTOS_CNPJ,
+                contexto=re.compile(r"(?i)\bcnpj\b"),
+                exige_refuerzo=True)))
     return d

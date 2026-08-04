@@ -1425,3 +1425,77 @@ class FuentesOpcionales(unittest.TestCase):
         with td:
             codigo, _ = correr_garita(Path(td.name))
             self.assertEqual(codigo, 2)
+
+
+class DatosRaspados(unittest.TestCase):
+    """Calibración que pidió pokefig: los CDN y las wikis cargan tiras de
+    dígitos que validan por azar. Dentro de una URL el hallazgo baja a
+    AVISO — visible pero sin romper, porque una CLABE en la ruta de un API
+    sí puede ser fuga real y cegarse está prohibido."""
+
+    def _det(self, nombre):
+        from garita.detectores.paises import cargar
+        return {d.nombre: d for d in cargar(Config())}[nombre]
+
+    def test_id_de_foto_de_instagram_baja_a_aviso(self):
+        # El caso literal de pokefig: el segmento de 18 dígitos del CDN de
+        # Instagram pasa el módulo de la CLABE y el catálogo de bancos.
+        linea = ('"https://scontent.cdninstagram.com/v/t39.30808-6/'
+                 '436878177_17891258928005714_902303669466701189_n.jpg"')
+        h = list(self._det("clabe").buscar(linea, "x"))
+        self.assertTrue(h)
+        self.assertEqual(h[0].severidad, "aviso")
+
+    def test_fuera_de_url_sigue_siendo_error(self):
+        h = list(self._det("clabe").buscar("CLABE 002180000000001008", "x"))
+        self.assertEqual(h[0].severidad, "error")
+
+    def test_aplica_a_todos_los_paises_via_buscador(self):
+        # El mismo principio para los detectores que arma `buscador`.
+        h = list(self._det("cpf").buscar(
+            "https://sitio.br/doc/cpf/111.444.777-35", "x"))
+        self.assertTrue(h)
+        self.assertEqual(h[0].severidad, "aviso")
+
+
+class PaisesNuevos2(unittest.TestCase):
+    """Ecuador y República Dominicana."""
+
+    def _det(self, nombre):
+        from garita.detectores.paises import cargar
+        return {d.nombre: d for d in cargar(Config())}[nombre]
+
+    def test_cedula_ec_algoritmo_y_estructura(self):
+        from garita.detectores.paises.ec import cedula_ec_valida
+        self.assertTrue(cedula_ec_valida("1710034065"))
+        self.assertFalse(cedula_ec_valida("1710034066"))
+        self.assertFalse(cedula_ec_valida("9910034065"))  # provincia 99
+        self.assertFalse(cedula_ec_valida("1770034065"))  # 3er dígito > 5
+
+    def test_cedula_ec_exige_que_la_nombren(self):
+        d = self._det("cedula_ec")
+        self.assertTrue(list(d.buscar("cédula: 1710034065", "x")))
+        self.assertFalse(list(d.buscar("folio 1710034065", "x")))
+
+    def test_cedula_do_luhn_y_contexto(self):
+        from garita.detectores.paises.do import cedula_do_valida
+        self.assertTrue(cedula_do_valida("00113918205"))
+        self.assertFalse(cedula_do_valida("00113918206"))
+        d = self._det("cedula_do")
+        self.assertTrue(list(d.buscar("cédula 001-1391820-5", "x")))
+        self.assertFalse(list(d.buscar("tracking 00113918205", "x")))
+
+    def test_repetidas_exentas(self):
+        for nombre, valor in (("cedula_ec", "cédula 2222222222"),
+                              ("cedula_do", "cédula 22222222222")):
+            d = self._det(nombre)
+            self.assertFalse(list(d.buscar(valor, "x")), nombre)
+
+    def test_marca_de_tiempo_no_es_cnpj(self):
+        # «"ts": "20010706161900"» —un timestamp del Wayback Machine en
+        # pokefig— pasa el doble módulo 11. Catorce dígitos pelones exigen
+        # que los nombren; con la puntuación oficial dispara solo.
+        d = self._det("cnpj")
+        self.assertFalse(list(d.buscar('"ts": "20010706161900",', "x")))
+        self.assertTrue(list(d.buscar("empresa 12.345.678/0001-95", "x")))
+        self.assertTrue(list(d.buscar("cnpj: 12345678000195", "x")))

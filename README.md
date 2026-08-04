@@ -103,7 +103,7 @@ archivo presente y roto truena igual que siempre.
 ## ¿Tu país no está?
 
 Los identificadores oficiales viven en `detectores/paises/`, **un archivo por
-país**. Hoy son once:
+país**. Hoy son trece:
 
 | País | Identificadores | Validación |
 |---|---|---|
@@ -118,6 +118,8 @@ país**. Hoy son once:
 | 🇨🇦 Canadá | SIN | Luhn + contexto |
 | 🇵🇹 Portugal | NIF | módulo 11 + contexto |
 | 🇺🇾 Uruguay | Cédula de identidad | dígito verificador |
+| 🇪🇨 Ecuador | Cédula de identidad | módulo 10 del Registro Civil + contexto |
+| 🇩🇴 Rep. Dominicana | Cédula (JCE) | Luhn + contexto |
 
 Agregar otro es un archivo, no una rama — comparten motor, exenciones y
 pruebas, así que un arreglo llega a todos el mismo día.
@@ -145,7 +147,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.6.0
+    rev: v0.7.0
     hooks:
       - id: garita
 ```
@@ -509,7 +511,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.6.0
+    rev: v0.7.0
     hooks:
       - id: garita
 ```
