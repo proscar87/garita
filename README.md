@@ -145,7 +145,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.5.1
+    rev: v0.6.0
     hooks:
       - id: garita
 ```
@@ -266,6 +266,40 @@ Detalles a saber:
   reglas distintas darían dos verdades distintas.
 - **La línea base no aplica**: congela el presente, y una auditoría del
   pasado que perdona no es una auditoría.
+
+Y como capa permanente, la **auditoría mensual con alertas en Security**:
+
+```yaml
+# .github/workflows/garita-historial.yml
+name: Garita — auditoría de historial
+on:
+  schedule:
+    - cron: "0 8 1 * *"   # día 1 de cada mes
+  workflow_dispatch:
+
+jobs:
+  auditar:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # sin historia completa no hay auditoría
+      - run: |
+          pip install garita
+          garita --historial --formato sarif --salida historial.sarif
+        continue-on-error: true
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: historial.sarif
+```
+
+Las alertas del historial apuntan a la ruta del commit que introdujo el
+dato — que puede ya no existir en el árbol, y está bien: el mensaje carga
+el commit, la fecha y si el archivo «se borró» (el dato no). La huella es
+`commit + ruta + regla`: el historial es inmutable, así que identifica al
+hallazgo para siempre sin derivar nada del valor.
 
 ---
 
@@ -475,7 +509,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.5.1
+    rev: v0.6.0
     hooks:
       - id: garita
 ```

@@ -114,11 +114,11 @@ def _blobs_del_historial(raiz: Path) -> dict[str, str]:
 
 def _tamanos(raiz: Path, shas: list[str]) -> dict[str, int]:
     """sha → tamaño, sólo de los que de verdad son blobs."""
-    proc = subprocess.Popen(
+    with subprocess.Popen(
         ["git", "cat-file", "--batch-check=%(objectname) %(objecttype) %(objectsize)"],
         cwd=raiz, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-    )
-    salida, _ = proc.communicate("\n".join(shas).encode() + b"\n")
+    ) as proc:
+        salida, _ = proc.communicate("\n".join(shas).encode() + b"\n")
     tamanos: dict[str, int] = {}
     for linea in salida.decode("utf-8", "replace").splitlines():
         partes = linea.split()
@@ -148,6 +148,7 @@ def _contenidos(raiz: Path, shas: list[str]):
                 yield sha, cuerpo
     finally:
         proc.stdin.close()
+        proc.stdout.close()
         proc.wait()
 
 

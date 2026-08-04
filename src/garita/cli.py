@@ -43,7 +43,10 @@ from .reporte_html import (
     generar as generar_html,
     generar_historial as generar_html_historial,
 )
-from .sarif import generar as generar_sarif
+from .sarif import (
+    generar as generar_sarif,
+    generar_historial as generar_sarif_historial,
+)
 
 
 def raiz_repo(desde: Path) -> Path:
@@ -259,20 +262,20 @@ def _historial(args, cfg, detectores, raiz: Path) -> int:
               "aceptada congela el PRESENTE; la auditoría del pasado no "
               "perdona, porque perdonar ahí es no auditar.", file=sys.stderr)
         return 2
-    if args.formato == "sarif":
-        print("Garita: --historial todavía no habla SARIF. Las alertas de "
-              "code scanning apuntan a líneas del árbol actual, y un "
-              "hallazgo del historial suele señalar un archivo que ya no "
-              "existe.", file=sys.stderr)
-        return 2
-
     res = revisar_historial(raiz, detectores, cfg.exenciones)
 
-    if args.formato == "html":
+    if args.formato == "sarif":
+        documento = json.dumps(generar_sarif_historial(res, detectores),
+                               indent=2, ensure_ascii=False) + "\n"
+    elif args.formato == "html":
         # El entregable: la auditoría del pasado es justo lo que se anexa a
         # un informe para alguien que no vive en la terminal.
         documento = generar_html_historial(
             res, raiz=raiz.name, fecha=date.today().isoformat())
+    else:
+        documento = None
+
+    if documento is not None:
         if args.salida:
             Path(args.salida).write_text(documento, encoding="utf-8")
             imprimir_historial(res)
