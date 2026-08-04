@@ -128,8 +128,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Garita: configuración inválida.\n  {e}", file=sys.stderr)
         return 2
 
+    listas_ausentes: list[str] = []
     try:
-        detectores = construir(cfg, raiz)
+        detectores = construir(cfg, raiz, listas_ausentes)
     except ValueError as e:
         # Un país inexistente es un error de configuración, no un hallazgo.
         # Salir con 1 haría que el equipo buscara un dato personal que no
@@ -145,6 +146,14 @@ def main(argv: list[str] | None = None) -> int:
               f"  No se continúa: revisar a medias y decir «OK» es peor que "
               f"no revisar.", file=sys.stderr)
         return 2
+
+    # Una lista opcional ausente se DICE, siempre y por stderr: revisar de
+    # menos en silencio es una marca verde sin revisión. Va a stderr porque
+    # stdout puede ser un documento (SARIF, HTML) y no se le mezcla nada.
+    for ausente in listas_ausentes:
+        print(f"Garita: la lista opcional «{ausente}» no está en esta "
+              f"máquina; el detector que depende de ella no corre aquí.",
+              file=sys.stderr)
 
     if args.explicar:
         return _explicar(cfg, detectores, raiz)
