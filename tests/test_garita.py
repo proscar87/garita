@@ -1499,3 +1499,56 @@ class PaisesNuevos2(unittest.TestCase):
         self.assertFalse(list(d.buscar('"ts": "20010706161900",', "x")))
         self.assertTrue(list(d.buscar("empresa 12.345.678/0001-95", "x")))
         self.assertTrue(list(d.buscar("cnpj: 12345678000195", "x")))
+
+
+class DeteccionViva(unittest.TestCase):
+    """El paso 4 de la lista de publicación, ahora permanente: bajar falsos
+    positivos no sirve de nada si la herramienta se volvió ciega, y las dos
+    fallas se ven idénticas en la tabla de controles. Cada tipo de detector
+    dispara sobre un repo sintético — si uno se apaga, CI lo grita."""
+
+    VECTORES = {
+        "secretos": 'k="eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZSJ9.firmaX"',
+        "asignacion_sospechosa": 'password = "Kx9mPqR2vNw8LtY4"',
+        "curp": "curp: AABB900101HDFCDF09",
+        "rfc": "RFC GOPE800101A18",
+        "clabe": "CLABE 002180000000001008",
+        "nss": "nss: 92988084494",
+        "telefono": "cel 55 1234 5678",
+        "cuit": "CUIT 20-12345678-6",
+        "cpf": "CPF 111.444.777-35",
+        "cnpj": "CNPJ 12.345.678/0001-95",
+        "rut": "RUT 12.345.678-5",
+        "nit": "NIT 900.123.456-8",
+        "dni_es": "DNI 10345678W",
+        "nie": "NIE X1234567L",
+        "cif": "CIF A12345674",
+        "iban_es": "IBAN ES91 2100 0418 4502 0005 1332",
+        "ruc": "RUC 20100079772",
+        "ssn": "SSN: 531-88-2074",
+        "sin_ca": "SIN 730 425 618",
+        "nif_pt": "NIF: 203456785",
+        "cedula_ec": "cédula: 1710034065",
+        "cedula_do": "cédula 001-1391820-5",
+    }
+
+    def test_todos_los_tipos_disparan(self):
+        archivos = {f"{k}.txt": v + "\n" for k, v in self.VECTORES.items()}
+        archivos["gen.py"] = 'PROHIBIDOS = ["Juanito"]\n'
+        archivos["clientes.txt"] = "AcmeCorp\n"
+        archivos["padron.py"] = 'LOTES = {47: "Juanito Pérez"}\n'
+        archivos["caso.md"] = "# Caso AcmeCorp\n"
+        archivos[".garita.yml"] = (
+            "nombres:\n  - gen.py:PROHIBIDOS\n"
+            "clientes:\n  - clientes.txt\n"
+            "exenciones:\n"
+            "  - archivo: gen.py\n    motivo: fuente\n    detectores: nombre\n"
+            "  - archivo: clientes.txt\n    motivo: fuente\n    detectores: cliente\n")
+        td = repo_temporal(archivos)
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 1)
+            esperados = set(self.VECTORES) | {"nombre", "cliente"}
+            muertos = [e for e in esperados
+                       if f" {e} " not in salida and f" {e}\n" not in salida]
+            self.assertEqual(muertos, [], f"detectores ciegos: {muertos}")
