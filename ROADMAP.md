@@ -122,10 +122,15 @@ ASCII enteras, y pruebas para `fallar_en_aviso` y `--explicar`.)*
 
 ## 3. Estratégico
 
-- [ ] **Catálogo ABM para la CLABE** — la única promesa explícita de las
+- [x] **Catálogo ABM para la CLABE** — la única promesa explícita de las
   docs (`docs/IDENTIFICADORES.md:152`): validar los tres primeros dígitos
   contra el catálogo de bancos corta casi todo lo que el dígito verificador
-  deja pasar.
+  deja pasar. *(Resultó que el catálogo YA estaba incrustado y cableado —
+  la doc decía «pendiente» por rancia — pero le faltaban 27 códigos
+  vigentes, casi todos IFPEs: Mercado Pago 722, Cuenca 723, Spin 728,
+  NVIO 710… Las CLABEs más probables de un volcado moderno pasaban
+  limpias. Cotejado contra Banxico en agosto 2026; los históricos se
+  conservan porque una CLABE vieja sigue siendo la cuenta de alguien.)*
 
 - [ ] **`docs/IDENTIFICADORES.md` cubre solo México** aunque el README lo
   enlaza como la referencia de los 13 países y `AGREGAR_PAIS.md` exige una

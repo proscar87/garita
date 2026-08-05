@@ -433,6 +433,17 @@ class IdentificadoresMexicanos(unittest.TestCase):
         self.assertTrue(list(d.buscar("CLABE 0021-8000-0000-0010-08", "f")))
         self.assertFalse(list(d.buscar("CLABE 0321-8000-0118-3597-10", "f")))
 
+    def test_clabe_de_fintech_tambien_es_clabe(self):
+        # Mercado Pago (722), Cuenca (723) y Spin (728) emiten buena parte
+        # de las CLABEs modernas y no estaban en el catálogo: la CLABE más
+        # probable en un volcado de 2026 pasaba limpia.
+        from garita.detectores.paises.mx import _banco_existe, clabe_valida
+        d = self._det("clabe")
+        self.assertTrue(clabe_valida("722969000000000018"))
+        self.assertTrue(list(d.buscar("CLABE 722969000000000018", "x")))
+        # Y un «banco» inexistente sigue cortando aunque el dígito valide.
+        self.assertFalse(_banco_existe("999999999999999999"))
+
     def test_clabe_no_confunde_fechas(self):
         d = self._det("clabe")
         self.assertFalse(list(d.buscar("del 2024-01-15 al 2024-01-16", "f")))

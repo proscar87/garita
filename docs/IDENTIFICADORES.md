@@ -149,7 +149,14 @@ documentación, no cuentas.
 Los identificadores tipo *snowflake* de Discord y X tienen 18–19 dígitos y
 matchean la forma. Rara vez empiezan con un código de banco válido, así que
 validar los primeros tres dígitos contra el catálogo de la ABM corta casi todo
-lo que el dígito deja pasar. *(Pendiente: incrustar el catálogo.)*
+lo que el dígito deja pasar.
+
+El catálogo está incrustado en `mx.py` (`_BANCOS`), cotejado contra el
+catálogo de instituciones de Banxico (agosto 2026): los códigos vigentes —
+incluidas las IFPEs como Mercado Pago (722), Cuenca (723) y Spin (728), que
+emiten buena parte de las CLABEs modernas — más los históricos de bancos
+fusionados, porque una CLABE vieja en un respaldo viejo sigue siendo la
+cuenta de alguien.
 
 ---
 

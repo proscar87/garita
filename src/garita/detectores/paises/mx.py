@@ -160,22 +160,33 @@ def clabe_valida(clabe: str) -> bool:
 # hallazgos en un solo archivo de numpy, todos con «bancos» inexistentes
 # como 9568 o 4762.
 #
-# Se listan los tres primeros dígitos. Es un subconjunto de instituciones
-# activas, no el catálogo completo: prefiero dejar pasar una CLABE de un
-# banco recién autorizado que marcar cincuenta números que no lo son.
+# Se listan los tres primeros dígitos: los VIGENTES (cotejados contra el
+# catálogo de instituciones de Banxico vía la librería `clabe` de cuenca-mx,
+# 2026-08) más los HISTÓRICOS de bancos fusionados o liquidados. Los
+# históricos se quedan a propósito: una CLABE de IXE en un respaldo de 2013
+# sigue siendo la cuenta de alguien, y el costo en falsos positivos de
+# treinta códigos extra es ínfimo. La mitad de los vigentes son IFPEs
+# (Mercado Pago 722, Cuenca 723, Spin 728, NVIO 710…) — faltaban, y son
+# justamente las CLABEs de los datos modernos.
 _BANCOS = {
-    "002", "006", "009", "012", "014", "019", "021", "022", "030", "032",
-    "036", "037", "040",
-    "042", "044", "058", "059", "060", "062", "072", "103", "106", "108",
-    "110", "112", "113", "116", "124", "126", "127", "128", "129", "130",
-    "131", "132", "133", "135", "136", "137", "138", "139", "140", "141",
-    "143", "145", "147", "148", "150", "151", "152", "154", "155", "156",
-    "157", "158", "159", "160", "166", "168", "600", "601", "602", "605",
-    "606", "607", "608", "610", "611", "613", "614", "615", "616", "617",
-    "618", "619", "620", "621", "622", "623", "626", "627", "628", "629",
-    "630", "631", "632", "633", "634", "636", "637", "638", "640", "642",
-    "646", "647", "648", "649", "651", "652", "653", "655", "656", "659",
-    "670", "677", "679", "684", "901", "902",
+    # vigentes e históricos, banca y casas de bolsa
+    "001", "002", "006", "009", "012", "014", "019", "021", "022", "030",
+    "032", "036", "037", "040", "042", "044", "058", "059", "060", "062",
+    "072", "103", "106", "108", "110", "112", "113", "116", "124", "126",
+    "127", "128", "129", "130", "131", "132", "133", "135", "136", "137",
+    "138", "139", "140", "141", "143", "145", "147", "148", "150", "151",
+    "152", "154", "155", "156", "157", "158", "159", "160", "166", "167",
+    "168", "600", "601", "602", "605", "606", "607", "608", "610", "611",
+    "613", "614", "615", "616", "617", "618", "619", "620", "621", "622",
+    "623", "626", "627", "628", "629", "630", "631", "632", "633", "634",
+    "636", "637", "638", "640", "642", "646", "647", "648", "649", "651",
+    "652", "653", "655", "656", "659", "661", "670", "677", "679", "680",
+    "683", "684", "685", "688", "689", "699",
+    # IFPEs y participantes recientes del SPEI
+    "703", "706", "710", "714", "715", "720", "721", "722", "723", "725",
+    "727", "728", "729", "730", "732", "734", "738",
+    # Banxico e infraestructura
+    "901", "902", "903",
 }
 
 

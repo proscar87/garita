@@ -12,4 +12,4 @@ adeudo; jamás la liga entre esa unidad y la persona.
 Hecho con Claude Code (Anthropic).
 """
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"
