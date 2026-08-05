@@ -34,6 +34,19 @@ def _en_github() -> bool:
     return os.environ.get("GITHUB_ACTIONS") == "true"
 
 
+def _ruta(v: str) -> str:
+    """Bajo Actions, stdout es un canal de comandos, no sólo texto.
+
+    Una ruta que empiece por «::» se interpretaría como comando de
+    workflow: un archivo llamado `::stop-commands::x` apagaba todas las
+    anotaciones que siguieran, y la misma vía servía para forjar
+    `::error` apuntando a archivos que Garita nunca marcó. Se blindaron
+    las anotaciones en v0.10.0 y quedó abierto el reporte humano, que
+    viaja por el mismo stdout. En una terminal la ruta se muestra tal
+    cual."""
+    return v.replace("::", "%3A%3A") if _en_github() else v
+
+
 def _color(activo: bool):
     if not activo:
         return lambda t, _c: t
@@ -64,7 +77,7 @@ def imprimir(res: Resultado, salida=None, base=None,
         print(file=salida)
         print(n("! Sin revisar por tamaño:", "amarillo"), file=salida)
         for archivo, motivo in res.omitidos_grandes[:10]:
-            print(n(f"    {archivo} — {motivo}", "gris"), file=salida)
+            print(n(f"    {_ruta(archivo)} — {motivo}", "gris"), file=salida)
         if len(res.omitidos_grandes) > 10:
             print(n(f"    …y {len(res.omitidos_grandes) - 10} más", "gris"), file=salida)
         print(n("  Un archivo grande es justo donde cabe un padrón entero. "
@@ -75,7 +88,7 @@ def imprimir(res: Resultado, salida=None, base=None,
         print(n("! Exenciones que no aplicaron a ningún archivo:", "amarillo"),
               file=salida)
         for patron in res.exenciones_muertas:
-            print(n(f"    {patron}", "gris"), file=salida)
+            print(n(f"    {_ruta(patron)}", "gris"), file=salida)
         print(n("  El archivo se renombró o se borró. Si se renombró, lleva "
                 "revisándose sin exención\n  desde entonces; si se borró, la "
                 "regla esconfiguración muerta. Actualiza .garita.yml.", "gris"),
@@ -106,7 +119,7 @@ def imprimir(res: Resultado, salida=None, base=None,
 
     print(file=salida)
     for archivo, hs in sorted(por_archivo.items()):
-        print(n(archivo, "negrita"), file=salida)
+        print(n(_ruta(archivo), "negrita"), file=salida)
         for h in sorted(hs, key=lambda x: x.linea):
             marca = "✗" if h.severidad == "error" else "!"
             tono = "rojo" if h.severidad == "error" else "amarillo"
@@ -168,7 +181,7 @@ def _bloque_linea_base(base, conocidos, pagadas, n, salida) -> None:
                 f"{len(conocidos)} hallazgo"
                 f"{'s' if len(conocidos) != 1 else ''}:", "gris"), file=salida)
         for h in conocidos[:20]:
-            print(n(f"    {h.archivo} · línea {h.linea} · {h.detector}",
+            print(n(f"    {_ruta(h.archivo)} · línea {h.linea} · {h.detector}",
                     "gris"), file=salida)
         if len(conocidos) > 20:
             print(n(f"    …y {len(conocidos) - 20} más (corre con "
@@ -187,7 +200,7 @@ def _bloque_linea_base(base, conocidos, pagadas, n, salida) -> None:
         print(n("Deuda pagada — entradas de la línea base que ya no "
                 "corresponden a nada:", "verde"), file=salida)
         for entrada in pagadas[:10]:
-            print(n(f"    {entrada}", "gris"), file=salida)
+            print(n(f"    {_ruta(entrada)}", "gris"), file=salida)
         if len(pagadas) > 10:
             print(n(f"    …y {len(pagadas) - 10} más", "gris"), file=salida)
         print(n("  Regenera con «garita --linea-base» para achicar el "
@@ -276,7 +289,7 @@ def imprimir_historial(res, salida=None, sin_color=False) -> None:
         print(file=salida)
         print(n("! Sin revisar por tamaño:", "amarillo"), file=salida)
         for etiqueta, motivo in res.omitidos_grandes[:10]:
-            print(n(f"    {etiqueta} — {motivo}", "gris"), file=salida)
+            print(n(f"    {_ruta(etiqueta)} — {motivo}", "gris"), file=salida)
         if len(res.omitidos_grandes) > 10:
             print(n(f"    …y {len(res.omitidos_grandes) - 10} más", "gris"),
                   file=salida)
@@ -303,7 +316,7 @@ def imprimir_historial(res, salida=None, sin_color=False) -> None:
             tono_h = "rojo" if h.severidad == "error" else "amarillo"
             duracion = (f" · en {hh.versiones} versiones del archivo"
                         if hh.versiones > 1 else "")
-            print(f"  {n(marca, tono_h)} {n(h.archivo, 'negrita')} · "
+            print(f"  {n(marca, tono_h)} {n(_ruta(h.archivo), 'negrita')} · "
                   f"desde el commit {hh.commit} ({hh.fecha}) · línea {h.linea}"
                   f"{duracion}  {n(h.detector, 'negrita')}  {h.que}",
                   file=salida)

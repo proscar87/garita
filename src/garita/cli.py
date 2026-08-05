@@ -108,6 +108,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--version", action="version", version=f"garita {__version__}")
     args = p.parse_args(argv)
 
+    if args.salida == "":
+        # El caso ordinario en CI: --salida "$RUTA" con la variable sin
+        # definir. `if args.salida` la trataba como ausente y el documento
+        # se volcaba a stdout sin que nadie lo pidiera ahí.
+        print("Garita: --salida está vacía (¿una variable sin definir en el "
+              "workflow?). Sin ruta no hay documento.", file=sys.stderr)
+        return 2
+
     if args.salida and args.formato == "humano":
         # Callar el reporte humano hacia un archivo no tiene caso de uso;
         # aceptar la bandera y sorprender después es peor que rechazarla.
@@ -123,6 +131,18 @@ def main(argv: list[str] | None = None) -> int:
         que = "--explicar" if args.explicar else "--linea-base"
         print(f"Garita: --formato/--salida no aplican con {que}; ese modo "
               f"no produce documento.", file=sys.stderr)
+        return 2
+
+    if args.explicar and (args.linea_base or args.sin_linea_base
+                          or args.linea_base_ruta or args.historial
+                          or args.archivos):
+        # La misma mentira que la guardia de arriba: `--explicar` retornaba
+        # antes que todo, así que `--linea-base --explicar` salía 0 sin
+        # congelar nada y `--explicar archivo.py` salía 0 sin revisarlo.
+        # Quien automatiza lee ese 0 como «hecho y limpio».
+        print("Garita: --explicar sólo explica; combinarlo con --historial, "
+              "la línea base o archivos aceptaría una orden que no se va a "
+              "cumplir.", file=sys.stderr)
         return 2
 
     raiz = raiz_repo(Path.cwd())
@@ -211,7 +231,15 @@ def main(argv: list[str] | None = None) -> int:
         raiz_real = raiz.resolve()
         normalizados: list[str] = []
         for pedido in args.archivos:
-            ruta = Path(pedido).resolve()
+            # Se resuelve el directorio, NUNCA el componente final:
+            # `resolve()` completo sigue los enlaces simbólicos, y un
+            # symlink rastreado que apunte fuera del repo «quedaba fuera
+            # del repositorio» — el commit se bloqueaba con 2 mientras el
+            # repo completo pasaba con 0. El enlace es del repo aunque su
+            # destino no lo sea; se revisa (o se omite diciéndolo) igual
+            # que en el modo completo.
+            p = Path(pedido)
+            ruta = p.parent.resolve() / p.name
             try:
                 rel = ruta.relative_to(raiz_real)
             except ValueError:
@@ -220,7 +248,7 @@ def main(argv: list[str] | None = None) -> int:
                       f"y a la línea base, que hablan en rutas del repo.",
                       file=sys.stderr)
                 return 2
-            if not ruta.is_file():
+            if not (ruta.is_file() or ruta.is_symlink()):
                 print(f"Garita: no existe el archivo «{pedido}». No se "
                       f"omite en silencio: aprobar sin revisar lo que se "
                       f"pidió es una marca verde sin revisión.",
@@ -273,11 +301,11 @@ def main(argv: list[str] | None = None) -> int:
         anotaciones_github(res, conocidos=conocidos)
 
     resumen = os.environ.get("GITHUB_STEP_SUMMARY")
-    if resumen:
-        with open(resumen, "a", encoding="utf-8") as f:
-            f.write(resumen_markdown(res, base=base, nuevos=nuevos,
-                                     conocidos=conocidos))
-    _salida_de_action(len(nuevos))
+    if resumen and not _anexar(resumen, resumen_markdown(
+            res, base=base, nuevos=nuevos, conocidos=conocidos)):
+        return 2
+    if not _salida_de_action(len(nuevos)):
+        return 2
 
     # Sólo lo nuevo decide el código de salida; la deuda aceptada ya se
     # imprimió aparte y no reprueba.
@@ -303,7 +331,24 @@ def _escribir_documento(ruta: str, documento: str) -> bool:
         return False
 
 
-def _salida_de_action(hallazgos: int) -> None:
+def _anexar(ruta: str, texto: str) -> bool:
+    """El espejo de `_escribir_documento` para las escrituras en anexar.
+
+    GITHUB_OUTPUT y GITHUB_STEP_SUMMARY vienen del entorno: una ruta
+    heredada y rota (contenedor de sólo lectura, disco lleno) tronaba con
+    traceback y código 1 —el reservado para «hay hallazgos»— sobre un repo
+    limpio, después de haberlo revisado."""
+    try:
+        with open(ruta, "a", encoding="utf-8") as f:
+            f.write(texto)
+        return True
+    except OSError as e:
+        print(f"Garita: no pude escribir «{ruta}»: {e.strerror or e}.",
+              file=sys.stderr)
+        return False
+
+
+def _salida_de_action(hallazgos: int) -> bool:
     """La salida `hallazgos` que la Action declara. Vive aquí y no en el
     envoltorio de la Action porque el conteo vive aquí: el envoltorio sólo
     ve el código de salida, y una salida documentada que siempre llega
@@ -311,8 +356,8 @@ def _salida_de_action(hallazgos: int) -> None:
     vez con el input `config`."""
     destino = os.environ.get("GITHUB_OUTPUT")
     if destino:
-        with open(destino, "a", encoding="utf-8") as f:
-            f.write(f"hallazgos={hallazgos}\n")
+        return _anexar(destino, f"hallazgos={hallazgos}\n")
+    return True
 
 
 def _historial(args, cfg, detectores, raiz: Path) -> int:
@@ -366,7 +411,8 @@ def _historial(args, cfg, detectores, raiz: Path) -> int:
     else:
         imprimir_historial(res, sin_color=args.sin_color)
 
-    _salida_de_action(len(res.hallazgos))
+    if not _salida_de_action(len(res.hallazgos)):
+        return 2
     if res.errores:
         return 1
     if res.avisos and cfg.fallar_en_aviso:

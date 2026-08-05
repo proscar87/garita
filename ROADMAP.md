@@ -70,7 +70,7 @@ no aislaba `GITHUB_ACTIONS`.
 
 ### El canal de Actions y los veredictos
 
-- [ ] **El reporte humano imprime la ruta sin escapar: inyección de comandos
+- [x] **El reporte humano imprime la ruta sin escapar: inyección de comandos
   de workflow** — `src/garita/reporte.py:109`. v0.10.0 blindó las
   anotaciones pero `imprimir()` vuelca `h.archivo` crudo en columna 0 del
   mismo stdout que GitHub parsea: un archivo llamado `::stop-commands::x`
@@ -80,7 +80,7 @@ no aislaba `GITHUB_ACTIONS`.
   `_ruta()` que neutralice `::` bajo `_en_github()`, aplicado a toda ruta de
   origen externo del reporte humano; prueba con el archivo `::stop-commands::x`.
 
-- [ ] **`_salida_de_action` y `GITHUB_STEP_SUMMARY` abren sin proteger:
+- [x] **`_salida_de_action` y `GITHUB_STEP_SUMMARY` abren sin proteger:
   traceback y código 1 en repo limpio** — `src/garita/cli.py:314` y `:277`.
   `_escribir_documento` se creó justo para esto y los dos `open()` hermanos
   quedaron desnudos: con `GITHUB_OUTPUT` o `GITHUB_STEP_SUMMARY` apuntando a
@@ -89,7 +89,7 @@ no aislaba `GITHUB_ACTIONS`.
   Arreglo: helper `_anexar()` espejo de `_escribir_documento`, y código 2
   cuando falle (es entorno, no hallazgo).
 
-- [ ] **`--explicar` se traga `--linea-base`, `--historial` y la lista de
+- [x] **`--explicar` se traga `--linea-base`, `--historial` y la lista de
   archivos en silencio** — `src/garita/cli.py:118`. `garita --linea-base
   --explicar` sale 0 sin congelar nada; `--explicar --historial` sale 0 sin
   auditar; `--explicar archivo-con-secreto` sale 0 donde la revisión da 1.
@@ -148,19 +148,23 @@ trae receta del buscador, pero nadie lo ha reproducido con adversario.)*
 
 ### CLI e historial
 
-- [ ] **Un symlink rastreado tumba el modo pre-commit con código 2** —
+- [x] **Un symlink rastreado tumba el modo pre-commit con código 2** —
   `cli.py:216`. `resolve()` sigue el enlace: apuntando fuera del repo da
   «queda fuera del repositorio», roto da «no existe» (falso); el repo
-  completo, en cambio, pasa con 0.
+  completo, en cambio, pasa con 0. *(Verificado y reproducido en v0.14.0:
+  ahora se resuelve el directorio pero nunca el componente final, y el
+  enlace se revisa —u omite diciéndolo— igual que en el modo completo.)*
 
 - [ ] **Rutas C-quoted de `git log --raw` no se des-quotan** —
   `historial.py:150`. `core.quotepath=false` no evita la cita de comillas,
   backslash, tab: el blob queda con una ruta real y una fantasma citada, que
   anula la relajación de pruebas, rompe exenciones y mutila el SARIF.
 
-- [ ] **`--salida` con cadena vacía burla las dos guardias** — `cli.py:258`.
+- [x] **`--salida` con cadena vacía burla las dos guardias** — `cli.py:258`.
   `if args.salida` es falso para `""` (el `$RUTA` sin definir de CI): no se
-  rechaza, no se escribe archivo, el SARIF sale por stdout.
+  rechaza, no se escribe archivo, el SARIF sale por stdout. *(Verificado y
+  reproducido en v0.14.0: guardia explícita con código 2 antes que todas
+  las demás.)*
 
 - [ ] **Secreto introducido en un commit de merge se reporta con commit «?» y
   fecha «?»** — `historial.py:204`. `git log --raw` sin `--diff-merges` no
@@ -174,6 +178,6 @@ trae receta del buscador, pero nadie lo ha reproducido con adversario.)*
 | Versión | Tema | Contenido |
 |---------|------|-----------|
 | v0.13.0 ✓ | Los silencios de los marcadores | Los cuatro de secretos.py + el RIF C |
-| v0.14.0 | El canal de Actions y los veredictos | Inyección de rutas, los `open()` desnudos, `--explicar` mandón; los plausibles de CLI que sobrevivan |
+| v0.14.0 ✓ | El canal de Actions y los veredictos | Inyección de rutas, los `open()` desnudos, `--explicar` mandón; los dos plausibles de CLI sobrevivieron y entraron |
 | v0.15.0 | Historial completo | HEAD en el alcance; los plausibles de historial que sobrevivan |
 | continuo | Calibración | Exentos oficiales de VE/GT/PY y los plausibles de país que sobrevivan |

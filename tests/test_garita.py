@@ -1471,6 +1471,109 @@ class ElCliNoSorprende(unittest.TestCase):
         self.assertIn("50%25 del riesgo", linea)
 
 
+class ElCanalDeActions(unittest.TestCase):
+    """v0.14.0: el mismo stdout que GitHub parsea, y los veredictos que
+    mentían.
+
+    Una ruta sin escapar era un comando de workflow; una variable de
+    entorno rota convertía un repo limpio en «hay hallazgos»; --explicar
+    aceptaba órdenes que no iba a cumplir; un symlink rastreado tumbaba
+    el hook; --salida vacía volcaba el documento a stdout.
+    """
+
+    REPO = {"app.py": 'url = "postgres://app:Kx9mPqR2vNw8@db/prod"\n'}
+
+    def test_ruta_con_prefijo_de_comando_no_inyecta(self):
+        # Un archivo llamado «::stop-commands::x» apagaba las anotaciones
+        # que siguieran; la vía también forjaba ::error ajenos.
+        td = repo_temporal(
+            {"::stop-commands::x": 'password = "Kx9mPqR2vNw8LtY4"\n'})
+        with td:
+            with unittest.mock.patch.dict(
+                    os.environ, {"GITHUB_ACTIONS": "true"}):
+                codigo, salida = correr_garita(Path(td.name))
+        # Las únicas líneas que pueden empezar por «::» son las
+        # anotaciones legítimas, que ya escapan sus propiedades.
+        for linea in salida.splitlines():
+            if linea.startswith("::"):
+                self.assertRegex(linea, r"^::(warning|error|notice) ")
+        self.assertIn("%3A%3Astop-commands", salida)
+
+    def test_en_terminal_la_ruta_sale_tal_cual(self):
+        td = repo_temporal(
+            {"::stop-commands::x": 'password = "Kx9mPqR2vNw8LtY4"\n'})
+        with td:
+            with unittest.mock.patch.dict(
+                    os.environ, {"GITHUB_ACTIONS": ""}):
+                codigo, salida = correr_garita(Path(td.name))
+        self.assertIn("::stop-commands::x", salida)
+
+    def test_github_output_roto_es_error_de_entorno(self):
+        # Tronaba con traceback y código 1 —el de «hay hallazgos»— sobre
+        # un repo limpio, después de haberlo revisado.
+        td = repo_temporal({"limpio.py": 'texto = "hola"\n'})
+        with td:
+            with unittest.mock.patch.dict(
+                    os.environ, {"GITHUB_OUTPUT": "/inexistente/dir/out"}):
+                codigo, salida = correr_garita(Path(td.name))
+        self.assertEqual(codigo, 2, salida)
+        self.assertIn("no pude escribir", salida)
+
+    def test_step_summary_roto_es_error_de_entorno(self):
+        td = repo_temporal({"limpio.py": 'texto = "hola"\n'})
+        with td:
+            with unittest.mock.patch.dict(
+                    os.environ,
+                    {"GITHUB_STEP_SUMMARY": "/inexistente/dir/sum",
+                     "GITHUB_OUTPUT": ""}):
+                codigo, salida = correr_garita(Path(td.name))
+        self.assertEqual(codigo, 2, salida)
+
+    def test_explicar_rechaza_ordenes_que_no_cumpliria(self):
+        # «garita --linea-base --explicar» salía 0 sin congelar nada;
+        # «--explicar archivo-con-secreto» salía 0 donde la revisión da 1.
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            for extra in (["--linea-base"], ["--historial"], ["app.py"]):
+                codigo, salida = correr_garita(
+                    Path(td.name), "--explicar", *extra)
+                self.assertEqual(codigo, 2, (extra, salida))
+            self.assertFalse((Path(td.name) / ".garita-base.json").exists())
+
+    def test_salida_vacia_es_error_de_uso(self):
+        # El caso ordinario en CI: --salida "$RUTA" con la variable sin
+        # definir. El documento se volcaba a stdout y el paso siguiente
+        # no encontraba archivo.
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            codigo, salida = correr_garita(
+                Path(td.name), "--formato", "sarif", "--salida", "")
+        self.assertEqual(codigo, 2, salida)
+        self.assertNotIn('"$schema"', salida)
+
+    def test_symlink_rastreado_no_tumba_el_hook(self):
+        # resolve() seguía el enlace: el que apuntaba fuera «quedaba
+        # fuera del repositorio» (código 2) y el roto «no existía»,
+        # aunque el repo completo pasara con 0 revisándolos igual.
+        td = repo_temporal({"a.py": 'texto = "hola"\n'})
+        with td:
+            raiz = Path(td.name)
+            (raiz / "enlace_fuera.txt").symlink_to("/etc/hosts")
+            (raiz / "enlace_roto.txt").symlink_to("no_existe.txt")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            completo, _ = correr_garita(raiz)
+            hook, salida = correr_garita(
+                raiz, "a.py", "enlace_fuera.txt", "enlace_roto.txt")
+            self.assertEqual(0, completo)
+            self.assertEqual(completo, hook, salida)
+
+    def test_archivo_inexistente_sigue_rechazado(self):
+        td = repo_temporal({"a.py": 'texto = "hola"\n'})
+        with td:
+            codigo, salida = correr_garita(Path(td.name), "no_existe.py")
+        self.assertEqual(codigo, 2, salida)
+
+
 class HistorialCompleto(unittest.TestCase):
     """La auditoría ve ramas remotas y rutas con acentos. (v0.10.0)"""
 
