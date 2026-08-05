@@ -344,6 +344,92 @@ class SilenciosDeMarcadores(unittest.TestCase):
         self.assertFalse(es_marcador("kR9mQz2Xv7Lp4Wn8"))
 
 
+class LoQueElMotorNoLeia(unittest.TestCase):
+    """v0.17.0: archivos que Garita juraba haber revisado.
+
+    Un UTF-16 sin marca contado como binario, un Latin-1 con los acentos
+    rotos —y con ellos las palabras de contexto—, y la coma del CSV
+    tomada por punto decimal. Los tres callaban sobre el formato en que
+    viaja un padrón.
+    """
+
+    CLABE = "002180000645829179"
+
+    def test_utf16_sin_bom_se_lee(self):
+        # Lo escriben iconv, java.io, .NET y el bcp -w de SQL Server: el
+        # exportador de padrones. Sin marca era «lleno de nulos» =>
+        # binario => omitido sin nombrarlo.
+        from garita.nucleo import descifrar
+        llave = "AKIA" + "QZLMWPXR2T7VBJ4K"
+        for cod in ("utf-16-le", "utf-16-be"):
+            texto = descifrar(f"aws_key = {llave}\n".encode(cod))
+            self.assertIsNotNone(texto, cod)
+            self.assertTrue(list(buscar(texto, "x")), cod)
+
+    def test_el_binario_de_verdad_sigue_descartado(self):
+        from garita.nucleo import descifrar
+        self.assertIsNone(descifrar(bytes(range(256)) * 4))
+        self.assertIsNone(descifrar(b"\0" * 400))
+        self.assertIsNone(descifrar(b"\x89PNG\r\n\x1a\n" + b"\0\x01\x02" * 50))
+
+    def test_latin1_conserva_sus_acentos_y_su_contexto(self):
+        # «Cédula» decodificada con replace se vuelve «C�dula» y ningún
+        # _CONTEXTO casa: el detector queda ciego y el archivo cuenta
+        # como revisado, que es peor que omitirlo.
+        from garita.nucleo import descifrar
+        texto = descifrar("Cédula: 1710034065\n".encode("latin-1"))
+        self.assertIn("Cédula", texto)
+        td = repo_temporal({})
+        with td:
+            raiz = Path(td.name)
+            (raiz / "latino.txt").write_bytes(
+                "Cédula: 1710034065\n".encode("latin-1"))
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz)
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("cedula_ec", salida)
+
+    def test_identificador_en_fila_csv_no_se_silencia(self):
+        # La coma del CSV se tomaba por punto decimal y la fila entera se
+        # descartaba antes de mirar nada más.
+        from garita.detectores.paises._comun import dentro_de_un_numero
+        linea = f"Juan Perez,55,{self.CLABE},1234.50"
+        i = linea.index(self.CLABE)
+        self.assertFalse(
+            dentro_de_un_numero(linea, i, i + len(self.CLABE)))
+
+    def test_el_numero_de_verdad_sigue_suprimido(self):
+        # La calibración que sí se quería: mantisas y tablas numéricas.
+        import re as _re
+        from garita.detectores.paises._comun import dentro_de_un_numero
+        for linea in ("x = 3.141592653589793e10",
+                      f"0,12, 3,45, 6,78, {self.CLABE}, 9,01",
+                      "valor 1.234567890123456789"):
+            m = _re.search(r"\d{10,}", linea)
+            self.assertTrue(
+                dentro_de_un_numero(linea, m.start(), m.end()), linea)
+
+    def test_columna_aparte_de_una_url_es_error_no_aviso(self):
+        # El token retrocedía hasta la URL de la columna anterior y el
+        # error se degradaba a aviso: veredicto 0 en datos raspados.
+        from garita.detectores.paises._comun import dentro_de_url
+        linea = f"Juan,https://ejemplo.invalido/juan,{self.CLABE}"
+        self.assertFalse(dentro_de_url(linea, linea.index(self.CLABE)))
+        # Y el identificador que sí vive DENTRO de la ruta sigue bajando.
+        ruta = f"foto https://cdn.invalido/{self.CLABE}.jpg"
+        self.assertTrue(dentro_de_url(ruta, ruta.index(self.CLABE)))
+
+    def test_spec_de_contratos_no_es_carpeta_de_pruebas(self):
+        # spec/ es donde vive el contrato OpenAPI, que se ESCRIBE — el
+        # mismo argumento por el que examples/ no se suprime.
+        from garita.nucleo import es_de_prueba
+        self.assertFalse(es_de_prueba("spec/openapi.yaml"))
+        # Y lo que sí es prueba con ese nombre sigue cubierto.
+        self.assertTrue(es_de_prueba("foo_spec.rb"))
+        self.assertTrue(es_de_prueba("a.spec.ts"))
+        self.assertTrue(es_de_prueba("spec/fixtures/llave.pem"))
+
+
 class Fuentes(unittest.TestCase):
     def cargar(self, contenido: str, spec: str = "gen.py:PROHIBIDOS"):
         with TemporaryDirectory() as d:

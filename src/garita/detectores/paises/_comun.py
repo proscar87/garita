@@ -35,15 +35,27 @@ _ES_NUMERO = re.compile(r"[0-9][.,][0-9]|[eE][+-]?\d|0[xXbBo]")
 
 
 def dentro_de_un_numero(linea: str, ini: int, fin: int) -> bool:
-    """¿La coincidencia es parte de un literal numérico más largo?"""
+    """¿La coincidencia es parte de un literal numérico más largo?
+
+    LA COMA PEGADA NO CUENTA COMO PUNTO DECIMAL. Contarla convertía la coma
+    del CSV en prueba de literal numérico, y una fila
+    `nombre,edad,<CLABE>,saldo` —el formato en que viaja un padrón— se
+    descartaba entera antes de mirar nada más. La tabla de decimales con
+    coma europea sigue cubierta por la ventana de abajo, que necesita tres
+    coincidencias.
+
+    Y la ventana se cuenta SIN la coincidencia: los separadores internos
+    del propio identificador («12.345.678» aporta dos pares) la llevaban al
+    umbral por sí solos, así que arreglar los bordes no bastaba.
+    """
     izq = linea[max(0, ini - 3):ini]
     der = linea[fin:fin + 4]
-    if re.search(r"[\d.][eE][+-]?$|[\d][.,]$", izq):
+    if re.search(r"[\d.][eE][+-]?$|[\d]\.$", izq):
         return True
-    if re.match(r"[eE][+-]?\d|[.,]\d", der):
+    if re.match(r"[eE][+-]?\d|\.\d", der):
         return True
     # Un contexto lleno de comas y puntos entre dígitos es una tabla numérica.
-    ventana = linea[max(0, ini - 24):fin + 24]
+    ventana = linea[max(0, ini - 24):ini] + " " + linea[fin:fin + 24]
     return len(_ES_NUMERO.findall(ventana)) >= 3
 
 
@@ -56,10 +68,16 @@ def dentro_de_url(linea: str, ini: int) -> bool:
     AVISO — no se calla, porque una CLABE en la ruta de un API sí puede
     ser una fuga real, y cegarse está prohibido. Pero tampoco grita: en
     datos raspados de internet, un error por cada foto es la clase de
-    ruido que desinstala guardianes."""
+    ruido que desinstala guardianes.
+
+    La coma corta el token igual que el espacio: en `Juan,https://…,<CLABE>`
+    la CLABE es una COLUMNA APARTE, no parte de la URL, y sin cortar ahí el
+    error se degradaba a aviso y el veredicto salía 0 — justo en datos
+    raspados, que es donde ese layout es la norma."""
     pedazo = linea[:ini]
     corte = max(pedazo.rfind(" "), pedazo.rfind("\t"),
-                pedazo.rfind("'"), pedazo.rfind('"'), pedazo.rfind("<"))
+                pedazo.rfind("'"), pedazo.rfind('"'), pedazo.rfind("<"),
+                pedazo.rfind(","), pedazo.rfind(";"), pedazo.rfind("|"))
     token = pedazo[corte + 1:]
     return "://" in token or token.startswith("www.")
 

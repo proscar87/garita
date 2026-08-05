@@ -27,7 +27,7 @@ Las dos oleadas anteriores quedaron saldadas: la primera en v0.8.0–v0.12.0
 
 ### Lo que el motor no leyó
 
-- [ ] **UTF-16 sin BOM se descarta como binario: secretos aprobados en
+- [x] **UTF-16 sin BOM se descarta como binario: secretos aprobados en
   silencio** — `src/garita/nucleo.py:238`. `descifrar()` solo reconoce UTF-16
   por BOM; sin marca, el archivo está lleno de bytes nulos, cae en `if b"\0"
   in crudo: return None` y se cuenta como «omitido (binarios o muy grandes)»
@@ -40,7 +40,7 @@ Las dos oleadas anteriores quedaron saldadas: la primera en v0.8.0–v0.12.0
   y el espejo) y decodificar; rechaza tanto bytes aleatorios como un bloque
   todo-nulos.
 
-- [ ] **Latin-1/CP1252 con acentos mata las palabras de contexto** —
+- [x] **Latin-1/CP1252 con acentos mata las palabras de contexto** —
   `src/garita/nucleo.py:240`. Todo lo no-BOM se decodifica como UTF-8 con
   `replace`, así que en un archivo Latin-1 «Cédula» se vuelve «C�dula» y
   ningún `_CONTEXTO` con `c[eé]dula` casa. Cada detector `exige_contexto`
@@ -50,7 +50,7 @@ Las dos oleadas anteriores quedaron saldadas: la primera en v0.8.0–v0.12.0
   Windows en español. Arreglo verificado: UTF-8 estricto y reintento con
   cp1252 solo si falla (idéntico a hoy para UTF-8 válido).
 
-- [ ] **`dentro_de_un_numero` silencia todo identificador en una fila CSV** —
+- [x] **`dentro_de_un_numero` silencia todo identificador en una fila CSV** —
   `src/garita/detectores/paises/_comun.py:41,43,46`. Las guardas de borde
   tratan la coma del CSV como prueba de literal numérico: en
   `Juan Perez,55,<CLABE>,1234.50` el hallazgo se descarta con `continue` antes
@@ -63,7 +63,7 @@ Las dos oleadas anteriores quedaron saldadas: la primera en v0.8.0–v0.12.0
   Arreglo verificado (201/201 en verde): coma fuera de los dos bordes, y la
   ventana contada **excluyendo el span de la coincidencia**.
 
-- [ ] **`spec|specs` en `RUTAS_DE_PRUEBA` suprime credenciales de contratos
+- [x] **`spec|specs` en `RUTAS_DE_PRUEBA` suprime credenciales de contratos
   OpenAPI** — `src/garita/nucleo.py:81`. El directorio `spec/` de un contrato
   OpenAPI o JSON-Schema es un documento que se **escribe**, no un fixture que
   se genera: una URL de conexión real en `spec/openapi.yaml` se suprime a
@@ -182,7 +182,7 @@ por severidad alegada.)*
   declara inaceptable: «correr con otra configuración de la que se pidió es
   peor que no correr».
 
-- [ ] **`dentro_de_url` no corta en coma: un ID en campo CSV posterior a una
+- [x] **`dentro_de_url` no corta en coma: un ID en campo CSV posterior a una
   URL baja a aviso** — `_comun.py:61`. El token se recorta en espacio, tab y
   comillas, pero no en coma: en `Juan,https://…/juan,<CLABE>` la CLABE es un
   campo propio y el token retrocede hasta incluir la URL, así que el error se
@@ -246,7 +246,7 @@ por severidad alegada.)*
 
 | Versión | Tema | Contenido |
 |---------|------|-----------|
-| v0.17.0 | Lo que el motor no leyó | UTF-16 sin BOM, Latin-1, el CSV de `dentro_de_un_numero`, `spec/`; y los plausibles de `dentro_de_url` que sobrevivan |
+| v0.17.0 ✓ | Lo que el motor no leyó | UTF-16 sin BOM, Latin-1, el CSV de `dentro_de_un_numero`, `spec/`; y los plausibles de `dentro_de_url` que sobrevivan |
 | v0.18.0 | Las vías de callar | Severidad en la línea base, fnmatch por segmentos, la `T` del diff y las rutas C-quoted de la Action, `detectores:` en lista |
 | v0.19.0 | La regresión y los veteranos | «MiClave…» y «TuClaveAqui» (las dos caras), el teléfono con paréntesis y con punto final, los rellenos del NSS, los escapes de `_descitar` |
 | v0.20.0 | Los documentos no mienten | `recortar()` sin valores completos, el `uri` del SARIF, el truncamiento del HTML, `--config ""` |

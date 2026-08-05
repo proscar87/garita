@@ -76,9 +76,14 @@ EXTENSIONES_BINARIAS = {
 # No se apagan TODOS los detectores en esas rutas: un dato personal en un
 # archivo de pruebas sigue siendo un dato personal. Sólo se relajan los
 # detectores de material criptográfico, que es lo que legítimamente vive ahí.
+# `spec/` NO está aquí, a propósito: es la carpeta de los contratos OpenAPI y
+# JSON-Schema, documentos que se ESCRIBEN — el mismo argumento por el que las
+# carpetas de ejemplo no se suprimen. Los archivos de prueba estilo RSpec o
+# Jasmine siguen cubiertos por ARCHIVOS_DE_PRUEBA (`foo_spec.rb`,
+# `foo.spec.ts`) y `spec/fixtures/` sigue casando por `fixtures?`.
 RUTAS_DE_PRUEBA = re.compile(
     r"(^|/)(tests?|testdata|test_data|fixtures?|__snapshots__|__fixtures__"
-    r"|spec|specs|mocks?|stubs?|testing)(/|$)"
+    r"|mocks?|stubs?|testing)(/|$)"
 )
 # Las carpetas de EJEMPLO no van con las de prueba, a propósito. Un fixture
 # de pruebas se genera; un ejemplo se ESCRIBE, y la mitad de las fugas
@@ -220,13 +225,45 @@ _BOM = (
 )
 
 
+def _utf16_sin_marca(crudo: bytes) -> str | None:
+    """UTF-16 al que nadie le puso BOM, reconocido por sus nulos alternados.
+
+    La marca cubre lo que escribe Windows; NO cubre `iconv -t UTF-16LE`,
+    `java.io` con ese charset, `.NET UnicodeEncoding(false, …)` ni el
+    `bcp -w` de SQL Server — o sea el exportador de padrones. Sin esto,
+    ese archivo es «lleno de nulos» → binario → omitido en silencio, que
+    es la marca verde sin revisión.
+    """
+    pares, impares = crudo[0::2], crudo[1::2]
+    if not pares or not impares:
+        return None
+    nulos_pares = pares.count(0) / len(pares)
+    nulos_impares = impares.count(0) / len(impares)
+    # Texto latino en UTF-16: el byte alto de cada par es nulo casi siempre
+    # y el bajo casi nunca. Un binario cualquiera no cumple ninguna de las
+    # dos, y un bloque todo-nulos falla la segunda.
+    if nulos_impares > 0.7 and nulos_pares < 0.1:
+        return crudo.decode("utf-16-le", "replace")
+    if nulos_pares > 0.7 and nulos_impares < 0.1:
+        return crudo.decode("utf-16-be", "replace")
+    return None
+
+
 def descifrar(crudo: bytes) -> str | None:
     """Bytes a texto, o None si es binario de verdad.
 
     La detección de binario es por byte nulo y no por extensión: un `.dat`
     sin extensión conocida puede ser texto, y un `.txt` puede no serlo. Pero
     antes se prueban las marcas de orden de bytes, porque un archivo UTF-16
-    está lleno de nulos y sí es texto.
+    está lleno de nulos y sí es texto — y después la forma del UTF-16 sin
+    marca, que las marcas no alcanzan.
+
+    Lo que no es UTF-8 se reintenta como CP1252 antes de rendirse: con
+    `replace` a secas, «Cédula» de un archivo Latin-1 se vuelve «C�dula» y
+    NINGUNA palabra de contexto con acento casa. El archivo se contaba como
+    revisado y callaba — peor que omitirlo, porque el resumen jura que se
+    miró. Es el default histórico de Excel y de los editores de Windows en
+    español, o sea el formato en que llegan los padrones de esta región.
     """
     for marca, codificacion in _BOM:
         if crudo.startswith(marca):
@@ -236,8 +273,11 @@ def descifrar(crudo: bytes) -> str | None:
                 return None
 
     if b"\0" in crudo:
-        return None
-    return crudo.decode("utf-8", "replace")
+        return _utf16_sin_marca(crudo)
+    try:
+        return crudo.decode("utf-8")
+    except UnicodeDecodeError:
+        return crudo.decode("cp1252", "replace")
 
 
 def leer(ruta: Path) -> str | None:
