@@ -146,12 +146,13 @@ Las dos oleadas anteriores quedaron saldadas: la primera en v0.8.0–v0.12.0
 
 ## 2. Plausible, sin verificar aún
 
-*(Trae receta del buscador; nadie lo ha reproducido con adversario. Ordenado
-por severidad alegada.)*
+*(Vacía desde v0.20.0: los trece se verificaron uno por uno —cada uno se
+reprodujo antes de tocarse— y los trece resultaron reales. La tercera oleada
+cerró 23 de 23. Quedan abajo con su nota de cierre.)*
 
 ### Veredictos que podrían mentir
 
-- [ ] **`recortar()` vuelca el valor COMPLETO de identificadores de ≤8
+- [x] **`recortar()` vuelca el valor COMPLETO de identificadores de ≤8
   caracteres** — `_comun.py:73`. Su docstring dice «Nunca el valor completo» y
   hace lo contrario: una cédula uruguaya pelona o un RUT chileno de 8 dígitos
   llegan íntegros al `message.text` del SARIF (que la pestaña Security muestra
@@ -160,7 +161,7 @@ por severidad alegada.)*
   `nucleo.recortar()`. El mismo patrón duplicado en `mx.py:285` es rama
   muerta (los ID mexicanos miden ≥10).
 
-- [ ] **`artifactLocation.uri` sin percent-encoding: SARIF inválido** —
+- [x] **`artifactLocation.uri` sin percent-encoding: SARIF inválido** —
   `sarif.py:76` y `:148`. El esquema 2.1.0 define ese campo como
   `uri-reference`: un espacio, comillas o `<>` producen un documento que no
   valida, y un `#` es peor —RFC 3986 lo parte en fragmento y la alerta apunta
@@ -175,7 +176,7 @@ por severidad alegada.)*
   **ningún** archivo del PR se revisa. La misma clase de bug que v0.15.0 cerró
   en `historial.py`. Arreglo: `git diff -z --name-only` con split por NUL.
 
-- [ ] **La guardia de variable vacía cubre `--salida` pero no `--config` ni
+- [x] **La guardia de variable vacía cubre `--salida` pero no `--config` ni
   `--linea-base-ruta`** — `cli.py:111`. `--config ""` (el `$VAR` sin definir de
   CI) cae en `if args.config:` y Garita corre con la configuración por
   omisión, aprobando con 0 — justo lo que la guardia de `--config` inexistente
@@ -229,14 +230,14 @@ por severidad alegada.)*
 
 ### Cosmético
 
-- [ ] **`first-parent` atribuye el origen al merge cuando el commit lateral
+- [x] **`first-parent` atribuye el origen al merge cuando el commit lateral
   tiene fecha posterior** — `historial.py:278`. La sobreescritura confía en
   que el commit original es más viejo, pero `git log` ordena por fecha de
   committer: con un reloj adelantado o un rebase que conserva fechas, el merge
   se emite después y gana. El reporte manda a quien limpia al commit
   equivocado. Arreglo: quedarse con la fecha mínima, o `--topo-order`.
 
-- [ ] **La sección «Deuda pagada» del HTML corta en 10 sin decirlo** —
+- [x] **La sección «Deuda pagada» del HTML corta en 10 sin decirlo** —
   `reporte_html.py:252`. Sus dos hermanas sí avisan «…y N más»; ésta
   desaparece las entradas 11 en adelante, y quien regenera la línea base
   guiándose por el HTML cree que la lista está completa.
@@ -250,4 +251,4 @@ por severidad alegada.)*
 | v0.17.0 ✓ | Lo que el motor no leyó | UTF-16 sin BOM, Latin-1, el CSV de `dentro_de_un_numero`, `spec/`; y los plausibles de `dentro_de_url` que sobrevivan |
 | v0.18.0 ✓ | Las vías de callar | Severidad en la línea base, fnmatch por segmentos, la `T` del diff y las rutas C-quoted de la Action, `detectores:` en lista |
 | v0.19.0 ✓ | La regresión y los veteranos | «MiClave…» y «TuClaveAqui» (las dos caras), el teléfono con paréntesis y con punto final, los rellenos del NSS, los escapes de `_descitar` |
-| v0.20.0 | Los documentos no mienten | `recortar()` sin valores completos, el `uri` del SARIF, el truncamiento del HTML, `--config ""` |
+| v0.20.0 ✓ | Los documentos no mienten | `recortar()` sin valores completos, el `uri` del SARIF, el truncamiento del HTML, `--config ""` |

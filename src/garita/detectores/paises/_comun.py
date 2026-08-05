@@ -87,8 +87,20 @@ def limpio(v: str) -> str:
 
 
 def recortar(v: str) -> str:
-    """Nunca el valor completo, ni siquiera en el reporte local."""
-    return v if len(v) <= 8 else f"{v[:4]}…{v[-2:]}"
+    """Nunca el valor completo, ni siquiera en el reporte local.
+
+    NUNCA quiere decir nunca: el `if len(v) <= 8` que había aquí devolvía
+    íntegras las cédulas uruguayas y los RUT chilenos de ocho dígitos, y
+    ese valor viajaba al SARIF —que la pestaña Security muestra a más
+    gente que el repositorio— y a la tabla del HTML, cuyo pie jura que
+    ningún valor completo aparece. El documento no puede mentir sobre sí
+    mismo, y menos re-filtrando el dato que denuncia.
+    """
+    if len(v) <= 4:
+        return "…" * len(v)
+    if len(v) <= 8:
+        return f"{v[:2]}…{v[-1:]}"
+    return f"{v[:4]}…{v[-2:]}"
 
 
 ARREGLO = (

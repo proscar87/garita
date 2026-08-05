@@ -250,9 +250,14 @@ def generar(res, raiz: str, fecha: str, base=None, nuevos=None,
 
     if pagadas:
         filas = "".join(f"<li><code>{_E(p)}</code></li>" for p in pagadas[:10])
+        # El «…y N más» que sus dos hermanas ya emiten: sin él, quien
+        # regenera la línea base guiándose por este documento cree que la
+        # lista que ve es toda la lista.
+        resto = (f'<p class="suave">…y {len(pagadas) - 10} más.</p>'
+                 if len(pagadas) > 10 else "")
         partes.append(
             f'<section class="tarjeta"><h2>Deuda pagada</h2>'
-            f'<ul style="padding-left:20px" class="gris">{filas}</ul>'
+            f'<ul style="padding-left:20px" class="gris">{filas}</ul>{resto}'
             f'<p class="suave" style="margin-top:8px">Entradas de la línea '
             f"base que ya no corresponden a nada. Regenera con "
             f"<code>garita --linea-base</code> para achicar el archivo."

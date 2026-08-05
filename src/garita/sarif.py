@@ -27,9 +27,21 @@ reglas de un solo uso.
 from __future__ import annotations
 
 from collections import defaultdict
+from urllib.parse import quote
 
 from . import __version__
 from .nucleo import Resultado
+
+
+def _uri(ruta: str) -> str:
+    """La ruta como referencia URI, que es lo que el esquema 2.1.0 pide.
+
+    Un espacio o unas comillas producían un documento que no valida; un
+    `#` es peor aunque cuele, porque RFC 3986 lo lee como fragmento y la
+    alerta termina apuntando a un artefacto que no existe. «mi archivo.txt»
+    es cotidiano, no adversarial.
+    """
+    return quote(ruta, safe="/")
 
 # Sin el esquema y la versión exactos, la subida a GitHub falla con un error
 # que no dice nada útil.
@@ -73,7 +85,7 @@ def generar(res: Resultado, detectores, conocidos=()) -> dict:
             "message": {"text": texto},
             "locations": [{
                 "physicalLocation": {
-                    "artifactLocation": {"uri": h.archivo},
+                    "artifactLocation": {"uri": _uri(h.archivo)},
                     "region": {"startLine": h.linea},
                 },
             }],
@@ -145,7 +157,7 @@ def generar_historial(res, detectores) -> dict:
             "message": {"text": texto},
             "locations": [{
                 "physicalLocation": {
-                    "artifactLocation": {"uri": h.archivo},
+                    "artifactLocation": {"uri": _uri(h.archivo)},
                     "region": {"startLine": h.linea},
                 },
             }],

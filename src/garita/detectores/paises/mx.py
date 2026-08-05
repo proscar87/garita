@@ -33,6 +33,7 @@ from typing import Iterator
 
 from ...config import Config
 from ...nucleo import Detector, Hallazgo
+from ._comun import recortar
 from ._mx_ladas import LADAS
 
 
@@ -293,9 +294,11 @@ _ARREGLO_ID = (
 
 def _hallazgo(archivo, linea, det, valor, por_que) -> Hallazgo:
     # Los identificadores se recortan como los secretos: el registro de una
-    # ejecución de CI suele verlo más gente que el propio repositorio.
-    corto = valor if len(valor) <= 8 else f"{valor[:4]}…{valor[-2:]}"
-    return Hallazgo(archivo=archivo, linea=linea, detector=det, que=corto,
+    # ejecución de CI suele verlo más gente que el propio repositorio. Se
+    # usa el recortar compartido y no una copia: la copia de antes devolvía
+    # entero todo valor de ocho caracteres o menos.
+    return Hallazgo(archivo=archivo, linea=linea, detector=det,
+                    que=recortar(valor),
                     por_que=por_que, como_arreglar=_ARREGLO_ID)
 
 

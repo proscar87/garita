@@ -258,13 +258,23 @@ def _origen_de(raiz: Path, sucios: set[str]) -> dict[str, tuple[str, str, str]]:
     """sha → (commit_abreviado, fecha, ruta) del commit MÁS VIEJO que lo trae.
 
     Una sola pasada por `git log --raw`, que lista el blob nuevo de cada
-    cambio. El log va del presente al pasado, así que la última aparición
-    que se ve es la más vieja — se sobreescribe sin más.
+    cambio, recorrida en orden TOPOLÓGICO e invertido: de los ancestros
+    hacia el presente. Así la primera aparición es la introducción de
+    verdad, y se queda.
+
+    El orden importa y no es un detalle: por omisión `git log` ordena por
+    FECHA DE COMMITTER, que un reloj adelantado, un rebase que conserva
+    fechas o un cherry-pick desordenan. Con ese orden, un secreto nacido
+    en una rama lateral se le atribuía al merge que lo trajo —anterior en
+    el reloj, posterior en la historia— y quien iba a limpiar buscaba en
+    el commit equivocado. La topología no miente: el ancestro es el
+    ancestro aunque su reloj diga otra cosa.
     """
     if not sucios:
         return {}
     crudo = _git(
-        raiz, "log", *_alcance(raiz), *_CON_MERGES, "--raw", "--no-abbrev",
+        raiz, "log", *_alcance(raiz), *_CON_MERGES, "--topo-order",
+        "--reverse", "--raw", "--no-abbrev",
         "--date=short", "--format=%x01%h %ad",
     )
     origen: dict[str, tuple[str, str, str]] = {}
@@ -280,7 +290,10 @@ def _origen_de(raiz: Path, sucios: set[str]) -> dict[str, tuple[str, str, str]]:
             partes = linea.split("\t")
             campos = partes[0].split()
             if len(campos) >= 5 and campos[3] in sucios:
-                origen[campos[3]] = (commit, fecha, _descitar(partes[-1]))
+                # setdefault y no asignación: en orden topológico invertido
+                # la primera aparición ya es la introducción.
+                origen.setdefault(
+                    campos[3], (commit, fecha, _descitar(partes[-1])))
     return origen
 
 

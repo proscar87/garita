@@ -108,13 +108,21 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--version", action="version", version=f"garita {__version__}")
     args = p.parse_args(argv)
 
-    if args.salida == "":
-        # El caso ordinario en CI: --salida "$RUTA" con la variable sin
-        # definir. `if args.salida` la trataba como ausente y el documento
-        # se volcaba a stdout sin que nadie lo pidiera ahí.
-        print("Garita: --salida está vacía (¿una variable sin definir en el "
-              "workflow?). Sin ruta no hay documento.", file=sys.stderr)
-        return 2
+    # El caso ordinario en CI: `--bandera "$RUTA"` con la variable sin
+    # definir. La cadena vacía se trataba como bandera ausente, y Garita
+    # corría con otra cosa de la que se le pidió —el documento a stdout, la
+    # configuración por omisión, la línea base por omisión— aprobando con 0.
+    # Es lo mismo que la guardia de --config inexistente declara
+    # inaceptable: correr con otra configuración de la que se pidió es peor
+    # que no correr.
+    for bandera, valor in (("--salida", args.salida),
+                           ("--config", args.config),
+                           ("--linea-base-ruta", args.linea_base_ruta)):
+        if valor == "":
+            print(f"Garita: {bandera} está vacía (¿una variable sin definir "
+                  f"en el workflow?). No se continúa con otra cosa de la que "
+                  f"se pidió.", file=sys.stderr)
+            return 2
 
     if args.salida and args.formato == "humano":
         # Callar el reporte humano hacia un archivo no tiene caso de uso;

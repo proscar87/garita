@@ -1133,6 +1133,64 @@ def _cargar_ejecutar():
     return mod
 
 
+class LosDocumentosNoMienten(unittest.TestCase):
+    """v0.20.0: el reporte no puede re-filtrar lo que denuncia, ni jurar
+    algo que no cumple.
+    """
+
+    def test_ningun_valor_sale_completo_por_corto_que_sea(self):
+        # `len(v) <= 8` devolvía íntegras las cédulas uruguayas y los RUT
+        # de ocho dígitos — al SARIF, que la pestaña Security muestra a
+        # más gente que el repo, y al HTML, cuyo pie jura lo contrario.
+        from garita.detectores.paises._comun import recortar
+        for v in ("41234563", "12345678", "1234", "12", "123456789012"):
+            self.assertNotEqual(v, recortar(v), v)
+            self.assertIn("…", recortar(v), v)
+
+    def test_el_sarif_no_trae_el_valor_entero(self):
+        td = repo_temporal({"datos.txt": "cedula 41234563 del titular\n"})
+        with td:
+            codigo, salida = correr_garita(
+                Path(td.name), "--formato", "sarif")
+        self.assertNotIn("41234563", salida)
+
+    def test_la_ruta_del_sarif_es_una_referencia_uri(self):
+        # Un espacio o unas comillas producían un documento que no valida;
+        # un «#» lo parte en fragmento y la alerta apunta a la nada.
+        from garita.sarif import _uri
+        self.assertEqual("raro%20%231.txt", _uri("raro #1.txt"))
+        self.assertEqual("a/b/c.txt", _uri("a/b/c.txt"))
+        self.assertEqual("pe%C3%B1a.pem", _uri("peña.pem"))
+
+    def test_las_banderas_vacias_no_corren_con_otra_cosa(self):
+        # `--config "$VAR"` con la variable sin definir corría con la
+        # configuración por omisión y aprobaba con 0.
+        td = repo_temporal({"x.py": "x = 1\n"})
+        with td:
+            for bandera in ("--config", "--linea-base-ruta", "--salida"):
+                codigo, salida = correr_garita(Path(td.name), bandera, "")
+                self.assertEqual(codigo, 2, (bandera, salida))
+
+    def test_el_html_dice_cuando_corta_la_deuda_pagada(self):
+        from garita.reporte_html import generar
+
+        class Res:
+            hallazgos = []
+            archivos_revisados = 1
+            archivos_omitidos = 0
+            omitidos_grandes = []
+            exenciones_muertas = []
+            exentos_aplicados = {}
+
+        class Base:
+            creada = "2026-08-05"
+
+        html = generar(Res(), raiz="x", fecha="2026-08-05", base=Base(),
+                       nuevos=[], conocidos=[],
+                       pagadas=[f"a{i}.txt · rfc" for i in range(15)])
+        self.assertIn("y 5 más", html[html.index("Deuda pagada"):])
+
+
 class SoloCambios(unittest.TestCase):
     """El modo que más gente va a usar en un pull request y que hasta ahora
     era una promesa sin respaldo: `action.yml` exponía el input sin una sola
@@ -1969,6 +2027,48 @@ class AlcanceDelHistorial(unittest.TestCase):
             codigo, salida = correr_garita(raiz, "--historial")
             # Una sola ruta, la de pruebas: lo criptográfico se relaja.
             self.assertEqual(codigo, 0, salida)
+
+    def test_el_origen_es_topologico_no_cronologico(self):
+        # `git log` ordena por fecha de committer, que un reloj adelantado
+        # o un rebase desordenan: el secreto nacido en una rama lateral se
+        # le atribuía al merge que lo trajo —anterior en el reloj,
+        # posterior en la historia— y quien limpiaba buscaba en el commit
+        # equivocado.
+        def commit_en(raiz, mensaje, cuando):
+            entorno = {**os.environ, "GIT_COMMITTER_DATE": cuando,
+                       "GIT_AUTHOR_DATE": cuando}
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                            "commit", "-q", "-m", mensaje], cwd=raiz,
+                           check=True, env=entorno, capture_output=True)
+
+        with TemporaryDirectory() as d:
+            raiz = Path(d)
+            subprocess.run(["git", "init", "-q", "-b", "main"],
+                           cwd=raiz, check=True)
+            (raiz / "a.txt").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            commit_en(raiz, "c1", "2026-01-01T00:00:00")
+            subprocess.run(["git", "checkout", "-qb", "lado"],
+                           cwd=raiz, check=True)
+            (raiz / "colado.py").write_text(
+                'password = "Kx9mPqR2vNw8LtY4"\n', encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            # El lateral trae fecha POSTERIOR al merge que lo integrará.
+            commit_en(raiz, "nace aquí", "2026-03-15T00:00:00")
+            lateral = subprocess.run(
+                ["git", "rev-parse", "--short=10", "HEAD"], cwd=raiz,
+                check=True, capture_output=True, text=True).stdout.strip()
+            subprocess.run(["git", "checkout", "-q", "main"],
+                           cwd=raiz, check=True)
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                            "merge", "lado", "--no-ff", "-qm", "merge"],
+                           cwd=raiz, check=True,
+                           env={**os.environ,
+                                "GIT_COMMITTER_DATE": "2026-02-01T00:00:00",
+                                "GIT_AUTHOR_DATE": "2026-02-01T00:00:00"},
+                           capture_output=True)
+            codigo, salida = correr_garita(raiz, "--historial")
+        self.assertIn(lateral, salida)
 
     def test_secreto_nacido_en_un_merge_conoce_su_commit(self):
         # `git log --raw` calla en los merges: un secreto metido al
