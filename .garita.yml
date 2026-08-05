@@ -25,3 +25,7 @@ exenciones:
   - archivo: README.md
     motivo: los ejemplos de configuración muestran formatos, no valores reales
     detectores: secretos
+
+  - archivo: ROADMAP.md
+    motivo: documenta los hallazgos de la oleada citando los vectores genéricos oficiales y los rellenos que los reproducen; ninguno señala a una persona
+    detectores: rif, rut, nit, cif
