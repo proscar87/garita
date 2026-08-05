@@ -30,10 +30,6 @@ _RUC = re.compile(r"(?<![\d.\-])\d{5,8}\s?-\s?\d(?![\d\-])")
 
 _CONTEXTO = re.compile(r"(?i)\b(ruc|dnit|timbrado|contribuyente|factura)\b")
 
-# Los dos ejemplos de la documentación oficial y de media guía en línea.
-EXENTOS_RUC = {"19465203", "800097351"}
-
-
 def ruc_py_valido(v: str) -> bool:
     d = limpio(v)
     m = re.fullmatch(r"(\d{5,8})(\d)", d)
@@ -42,6 +38,25 @@ def ruc_py_valido(v: str) -> bool:
     s = sum(int(c) * (i + 2) for i, c in enumerate(reversed(m.group(1))))
     r = s % 11
     return int(m.group(2)) == (11 - r if r > 1 else 0)
+
+
+def _repetidos_validos() -> set[str]:
+    """El RUC de puros ceros valida (suma 0, residuo 0, dv 0) en sus
+    cuatro largos, y es el relleno de placeholder de siempre. ve.py y
+    gt.py ya generaban sus repetidos; aquí faltaban."""
+    fuera = set()
+    for largo in range(5, 9):
+        for n in range(10):
+            for dv in range(10):
+                v = f"{str(n) * largo}{dv}"
+                if ruc_py_valido(v):
+                    fuera.add(v)
+    return fuera
+
+
+# Los repetidos que validan, más los dos ejemplos de la documentación
+# oficial y de media guía en línea.
+EXENTOS_RUC = _repetidos_validos() | {"19465203", "800097351"}
 
 
 def detectores(cfg: Config) -> list[Detector]:

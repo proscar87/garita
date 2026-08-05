@@ -23,10 +23,15 @@ from ._comun import buscador, limpio
 _TABLA = "TRWAGMYFPDXBNJZSQVHLCKE"
 _DNI = re.compile(r"(?<![\w-])\d{8}\s?-?\s?[A-Za-z](?![\w-])")
 _NIE = re.compile(r"(?<![\w-])[XYZxyz]\s?-?\s?\d{7}\s?-?\s?[A-Za-z](?![\w-])")
-# Mismos separadores que el NIE: «B-12345678» es la forma más común por
-# escrito, y sin admitirla la rama de separadores del refuerzo quedaba muerta.
+# «B-12345678» es la forma más común por escrito, y sin admitirla la rama
+# de separadores del refuerzo quedaba muerta. Pero el separador es el
+# GUION, nunca el espacio solo: con \s en la regex, el mismo espacio que
+# permitía el match satisfacía el refuerzo de _comun, y una letra con siete
+# dígitos y un control separados por espacios disparaba como error sin
+# palabra alguna — la lección del espacio como señal demasiado débil para
+# un solo carácter de control.
 _CIF = re.compile(
-    r"(?<![\w-])[A-HJ-NP-SUVWa-hj-np-suvw]\s?-?\s?\d{7}\s?-?\s?[0-9A-Ja-j](?![\w-])")
+    r"(?<![\w-])[A-HJ-NP-SUVWa-hj-np-suvw](?:\s?-\s?)?\d{7}(?:\s?-\s?)?[0-9A-Ja-j](?![\w-])")
 _IBAN = re.compile(r"(?<![\w])ES\s?\d{2}(?:\s?\d{4}){5}(?![\w])", re.IGNORECASE)
 
 _CTRL_CIF = "JABCDEFGHI"

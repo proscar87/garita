@@ -2205,6 +2205,65 @@ class PaisesCalibrados(unittest.TestCase):
         self.assertTrue(list(d.buscar("NIT 900.123.456-8", "x")))
 
 
+class CalibracionFinal(unittest.TestCase):
+    """v0.16.0: los seis plausibles que cerraron la oleada — 20 de 20.
+
+    Exentos oficiales que los docstrings citaban y el código no exentaba,
+    el espacio como refuerzo del CIF, y la base de ocho del NIT
+    colombiano cazando folios y RUTs chilenos.
+    """
+
+    def _det(self, nombre, mod):
+        from garita.config import Config
+        import importlib
+        m = importlib.import_module(f"garita.detectores.paises.{mod}")
+        return {x.nombre: x for x in m.detectores(Config())}[nombre]
+
+    def test_los_rif_de_la_papeleria_oficial_estan_exentos(self):
+        # G-20000303-0 (SENIAT) y J-00123072-6 (PDVSA): los vectores del
+        # propio docstring. Citar la guía oficial no debe dar error.
+        d = self._det("rif", "ve")
+        self.assertFalse(list(d.buscar(
+            "reproduce el del SENIAT (G-20000303-0) y PDVSA (J-00123072-6)",
+            "x")))
+
+    def test_el_nit_del_instructivo_de_la_sat_esta_exento(self):
+        d = self._det("nit_gt", "gt")
+        self.assertFalse(list(d.buscar("nit: 3602978-5 (ejemplo FEL)", "x")))
+
+    def test_el_ruc_de_puros_ceros_es_relleno(self):
+        # Valida en sus cuatro largos (suma 0, residuo 0, dv 0); ve.py y
+        # gt.py ya generaban sus repetidos, py.py no.
+        d = self._det("ruc_py", "py")
+        for v in ("00000-0", "000000-0", "0000000-0", "00000000-0"):
+            self.assertFalse(list(d.buscar(f"ruc: {v}", "x")), v)
+
+    def test_cif_el_espacio_solo_no_es_evidencia(self):
+        # Con \s en la regex, el mismo espacio que permitía el match
+        # satisfacía el refuerzo: «modelo A 1234567 4» era error sin
+        # palabra alguna. El separador del CIF es el guion.
+        d = self._det("cif", "es")
+        self.assertFalse(list(d.buscar("modelo A 1234567 4", "x")))
+        # El guion sigue siendo refuerzo y el contexto sigue vivo.
+        self.assertTrue(list(d.buscar("titular B-12345674", "x")))
+        self.assertTrue(list(d.buscar("CIF A12345674", "x")))
+
+    def test_co_base_de_ocho_exige_la_palabra_que_la_nombra(self):
+        # La forma de ocho es exactamente la del RUT chileno y ~10% de los
+        # folios de nueve dígitos pasan el dígito de la DIAN: junto a
+        # «factura» o «cc» disparaban, y cada RUT bien escrito salía
+        # duplicado como NIT del país equivocado.
+        d = self._det("nit", "co")
+        self.assertFalse(list(d.buscar("Factura 123456788 pagada", "x")))
+        self.assertFalse(list(d.buscar("cc: 123456788", "x")))
+        self.assertFalse(list(d.buscar("RUT 14.588.824-7", "x")))
+        # Nombrado de verdad, sigue detectándose; el chileno sigue siendo
+        # del detector chileno.
+        self.assertTrue(list(d.buscar("NIT 14.588.824-7", "x")))
+        self.assertTrue(list(
+            self._det("rut", "cl").buscar("RUT 14.588.824-7", "x")))
+
+
 class PaisesNuevos3(unittest.TestCase):
     """Venezuela, Paraguay y Guatemala (v0.12.0).
 

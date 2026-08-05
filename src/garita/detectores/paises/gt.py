@@ -51,7 +51,9 @@ def _repetidos_validos() -> set[str]:
     return fuera
 
 
-EXENTOS_NIT = _repetidos_validos()
+# Más el vector de toda la documentación FEL de la SAT, que el docstring
+# cita y el código no exentaba: citar el instructivo oficial daba error.
+EXENTOS_NIT = _repetidos_validos() | {"36029785"}
 
 
 def detectores(cfg: Config) -> list[Detector]:

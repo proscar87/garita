@@ -112,37 +112,40 @@ no aislaba `GITHUB_ACTIONS`.
 
 ## 2. Plausible, sin verificar aún
 
-*(Quedaron fuera del cupo de verificación adversarial de la oleada; cada uno
-trae receta del buscador, pero nadie lo ha reproducido con adversario.)*
+*(Vacía desde v0.16.0: los diez se verificaron uno por uno —cada uno se
+reprodujo antes de tocarse— y los diez resultaron reales. La oleada cerró
+20 de 20: symlinks y `--salida ""` en v0.14.0, rutas C-quoted y merges en
+v0.15.0, y los seis de calibración en v0.16.0. Los seis de abajo quedan
+con su nota de cierre.)*
 
 ### Calibración de exentos en los países nuevos
 
-- [ ] **`EXENTOS_RIF` no incluye los RIF oficiales que el propio módulo
+- [x] **`EXENTOS_RIF` no incluye los RIF oficiales que el propio módulo
   cita** — `ve.py:58`. G-20000303-0 (SENIAT) y J-00123072-6 (PDVSA) están en
   el docstring como vectores y no están exentos: citar la documentación del
   SENIAT produce un error. `py.py` sí exenta sus ejemplos; la asimetría
   delata la omisión.
 
-- [ ] **`EXENTOS_NIT` no incluye el vector 3602978-5 de la SAT** — `gt.py:54`.
+- [x] **`EXENTOS_NIT` no incluye el vector 3602978-5 de la SAT** — `gt.py:54`.
   El docstring lo llama «el vector de toda la documentación» y el código no
   lo exenta.
 
-- [ ] **`EXENTOS_RUC` no cubre el relleno todo-ceros, que valida** —
+- [x] **`EXENTOS_RUC` no cubre el relleno todo-ceros, que valida** —
   `py.py:34`. `00000-0` a `00000000-0` pasan el módulo 11 y no hay
   `_repetidos_validos()` como en ve.py y gt.py.
 
 ### Calibración de países tocados
 
-- [ ] **CIF: el espacio cuenta como refuerzo y dispara sin contexto** —
+- [x] **CIF: el espacio cuenta como refuerzo y dispara sin contexto** —
   `es.py:29`. Al admitir `\s` en el regex, el mismo espacio que permite el
   match satisface el refuerzo: «modelo A 1234567 4» es error sin palabra de
   contexto (~6.5 % de combinaciones al azar validan).
 
-- [ ] **NIT con base de 8 dígitos: folios de 9 dígitos junto a
+- [x] **NIT con base de 8 dígitos: folios de 9 dígitos junto a
   «factura»/«cc» disparan** — `co.py:25`. ~10 % de tiras de 9 dígitos pasan
   el dígito DIAN, y «cc» casa el «Cc:» de correos.
 
-- [ ] **El NIT de 8 dígitos caza RUTs chilenos** — `co.py:25`. La base de 8
+- [x] **El NIT de 8 dígitos caza RUTs chilenos** — `co.py:25`. La base de 8
   es la forma normal del RUT; ~9 % de RUTs válidos coinciden también en el DV
   colombiano y salen duplicados con país equivocado.
 
@@ -184,4 +187,4 @@ trae receta del buscador, pero nadie lo ha reproducido con adversario.)*
 | v0.13.0 ✓ | Los silencios de los marcadores | Los cuatro de secretos.py + el RIF C |
 | v0.14.0 ✓ | El canal de Actions y los veredictos | Inyección de rutas, los `open()` desnudos, `--explicar` mandón; los dos plausibles de CLI sobrevivieron y entraron |
 | v0.15.0 ✓ | Historial completo | HEAD en el alcance; los dos plausibles de historial sobrevivieron y entraron |
-| continuo | Calibración | Exentos oficiales de VE/GT/PY y los plausibles de país que sobrevivan |
+| v0.16.0 ✓ | Calibración final | Los seis plausibles de país sobrevivieron: exentos oficiales de VE/GT/PY, CIF con guion, NIT colombiano en dos niveles |

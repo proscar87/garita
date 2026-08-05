@@ -273,9 +273,13 @@ El «DV» que a veces la acompaña es el de la DIAN, de cuando la cédula opera
 como NIT.
 
 El NIT valida con el dígito de la DIAN: pesos primos `3,7,13,17,19,23,29,37…`
-sobre la base invertida, módulo 11. Base de 8 **o** 9 dígitos — las cédulas
-antiguas, hoy NIT de persona natural, tienen ocho. Refuerzo: en Colombia los
-celulares y las cédulas nuevas también son de diez dígitos.
+sobre la base invertida, módulo 11. Dos niveles: la base de **9** dígitos es
+la normal y exige refuerzo (en Colombia los celulares y las cédulas nuevas
+también son de diez dígitos). La base de **8** —las cédulas antiguas, hoy
+NIT de persona natural— exige la palabra que la nombra (`nit`, `dian`,
+`nuip`): su forma es exactamente la del RUT chileno (~9% de los RUT válidos
+también pasan el dígito de la DIAN) y ~10% de los folios de nueve dígitos
+validan por azar, así que ahí ni el formato ni «factura»/«cc» son evidencia.
 
 ## Ecuador — cédula de identidad
 
@@ -297,7 +301,9 @@ certificados de prueba de la FNMT).
 sobre los siete dígitos; la Orden EHA/451/2008 fija que `K P Q R S N W`
 exigen control alfabético (`JABCDEFGHI`), `A B E H` numérico, y el resto
 admite ambos — esa doble puerta deja pasar ~7%, por eso refuerzo. Admite
-separadores («B-12345678» es la forma común por escrito).
+separadores, pero el separador es el **guion** («B-12345678», la forma común
+por escrito), nunca el espacio solo: un espacio que a la vez permite el
+match y satisface el refuerzo es evidencia que se paga sola.
 
 **IBAN**: el detector más limpio de la herramienta — valida el módulo 97 del
 IBAN **y** los dos dígitos de control internos del CCC que envuelve. Tasa de
@@ -322,7 +328,8 @@ SSN más publicados de la historia — `078-05-1120` (la cartera de Woolworth,
 Base de hasta 8 dígitos + control: pesos descendentes desde la izquierda
 (n+1 … 2), módulo 11, y el residuo 10 se escribe **K**. Es el algoritmo que
 la SAT documenta para la factura electrónica (FEL); el vector de todo
-instructivo (`3602978-5`) reproduce. Contexto **siempre**: la forma también
+instructivo (`3602978-5`) reproduce **y está exento**, igual que los
+repetidos que validan. Contexto **siempre**: la forma también
 es un rango o un folio. Y «sat» no cuenta como contexto — en un repositorio
 es sábado o el SAT mexicano; `nit`, `fel`, `factura` sí.
 
@@ -335,7 +342,8 @@ El RUC de una persona física ES su cédula más el dígito verificador
 (`1946520-3`); el de una jurídica arranca en 80 (`80009735-1`). El algoritmo
 lo distribuye la propia SET (hoy DNIT) como código fuente: pesos 2, 3, 4…
 de derecha a izquierda, módulo 11; residuo 0 o 1 → verificador 0. Los dos
-ejemplos de la documentación oficial reproducen y están exentos.
+ejemplos de la documentación oficial reproducen y están exentos, igual que
+el relleno de puros ceros, que valida en sus cuatro largos.
 
 Contexto **siempre** («dígitos-guion-dígito» también es un rango de páginas)
 y la sigla vieja de la autoridad no cuenta: «set» es palabra común del
@@ -391,7 +399,8 @@ públicos de entidades: el del propio SENIAT (`G-20000303-0`) y el de PDVSA
 **El RIF de V o E contiene la cédula** de la persona en sus ocho dígitos —
 el mismo atajo que el CUIT argentino y el RUC peruano, porque la cédula
 venezolana no tiene verificador propio. Refuerzo; los repetidos que validan
-(`J-00000000-0`) están exentos.
+(`J-00000000-0`) están exentos, y también los dos vectores de la papelería
+oficial (`G-20000303-0`, `J-00123072-6`): citar la guía no señala a nadie.
 
 ## Los que quedan fuera, y por qué
 

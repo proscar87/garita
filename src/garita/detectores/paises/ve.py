@@ -57,7 +57,10 @@ def _repetidos_validos() -> set[str]:
     return fuera
 
 
-EXENTOS_RIF = _repetidos_validos()
+# Más los dos vectores de calibración del propio docstring: están en la
+# papelería oficial del SENIAT y PDVSA y en media guía en línea — citarlos
+# no señala a nadie. py.py ya exentaba los suyos; la asimetría era la falla.
+EXENTOS_RIF = _repetidos_validos() | {"G200003030", "J001230726"}
 
 
 def detectores(cfg: Config) -> list[Detector]:
