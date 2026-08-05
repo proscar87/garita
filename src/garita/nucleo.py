@@ -291,6 +291,36 @@ def leer(ruta: Path) -> str | None:
 
 # ── Exenciones ─────────────────────────────────────────────────────────────
 
+def casa_ruta(archivo: str, patron: str) -> bool:
+    """fnmatch POR SEGMENTOS: el `*` no cruza las barras, el `**` sí.
+
+    Con `fnmatch` a secas, un patrón escrito pensando en la carpeta
+    `tests/` absorbía además `tests_reales/` y `tests_viejos.tar` — y
+    `tests_reales/` no es ruta de prueba, así que ahí los hallazgos eran
+    de verdad. Peor: la absorción era muda, porque el patrón sí coincidía
+    y no salía como exención muerta.
+
+    Ahora «tests*» no casa nada y aparece en el reporte como exención que
+    no aplicó: quien la escribió se entera de que quería «tests/**».
+    """
+    partes_a = archivo.split("/")
+    partes_p = patron.split("/")
+
+    def desde(i: int, j: int) -> bool:
+        while j < len(partes_p):
+            if partes_p[j] == "**":
+                if j + 1 == len(partes_p):
+                    return True
+                return any(desde(k, j + 1) for k in range(i, len(partes_a) + 1))
+            if i >= len(partes_a) or not fnmatch.fnmatch(partes_a[i],
+                                                        partes_p[j]):
+                return False
+            i, j = i + 1, j + 1
+        return i == len(partes_a)
+
+    return desde(0, 0)
+
+
 @dataclass
 class Exencion:
     """Un archivo exento, CON SU MOTIVO.
@@ -308,7 +338,7 @@ class Exencion:
     no debería exentarlo también de 'llave_privada'."""
 
     def cubre(self, archivo: str, detector: str) -> bool:
-        if not fnmatch.fnmatch(archivo, self.patron):
+        if not casa_ruta(archivo, self.patron):
             return False
         return not self.detectores or detector in self.detectores
 
@@ -366,7 +396,7 @@ def revisar(
         res.archivos_revisados += 1
 
         for e in exen:
-            if fnmatch.fnmatch(rel, e.patron):
+            if casa_ruta(rel, e.patron):
                 patrones_vistos.add(e.patron)
 
         for det in dets:

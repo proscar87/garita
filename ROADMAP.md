@@ -78,7 +78,7 @@ Las dos oleadas anteriores quedaron saldadas: la primera en v0.8.0–v0.12.0
 
 ### Las vías de callar
 
-- [ ] **La línea base perdona por conteo sin mirar la severidad: un aviso
+- [x] **La línea base perdona por conteo sin mirar la severidad: un aviso
   congelado absuelve un ERROR nuevo** — `src/garita/linea_base.py:104`.
   `filtrar()` perdona hasta N hallazgos por clave `archivo::detector`, sin
   severidad y empezando por la línea más baja. Varios detectores emiten aviso
@@ -92,7 +92,7 @@ Las dos oleadas anteriores quedaron saldadas: la primera en v0.8.0–v0.12.0
   romper formato: consumir los perdones ordenando los avisos primero, que
   sesga hacia falso positivo y nunca hacia falso negativo.
 
-- [ ] **El `*` de fnmatch cruza «/»: la exención «tests\*» exenta también
+- [x] **El `*` de fnmatch cruza «/»: la exención «tests\*» exenta también
   `tests_reales/`** — `src/garita/nucleo.py:271`. `Exencion.cubre` usa
   `fnmatch`, donde `*` casa las barras: un patrón escrito pensando en la
   carpeta `tests/` absorbe `tests_reales/`, `tests_viejos.tar` y todo lo que
@@ -105,7 +105,7 @@ Las dos oleadas anteriores quedaron saldadas: la primera en v0.8.0–v0.12.0
   absorción silenciosa) y listar qué archivos absorbió cada exención. Es
   cambio de semántica: anunciarlo.
 
-- [ ] **`solo-cambios` omite los typechange: un symlink reemplazado por
+- [x] **`solo-cambios` omite los typechange: un symlink reemplazado por
   archivo con secreto pasa con 0** — `scripts/ejecutar.py:31`. El
   `--diff-filter=ACMR` excluye el estado `T`. Si el PR trae además cualquier
   otro cambio (la lista no queda vacía y no cae al escaneo completo), el
@@ -167,7 +167,7 @@ por severidad alegada.)*
   a un artefacto que no existe. «mi archivo.txt» es cotidiano, no
   adversarial. Arreglo: `quote(h.archivo, safe='/')`.
 
-- [ ] **`solo-cambios` no des-quota las rutas C-quoted de git: un archivo con
+- [x] **`solo-cambios` no des-quota las rutas C-quoted de git: un archivo con
   ñ tumba el PR con exit 2** — `scripts/ejecutar.py:34`. `git diff
   --name-only` cita los nombres no ASCII, la cadena literal llega a la CLI y
   responde «no existe el archivo» con código 2: un PR legítimo de un repo en
@@ -201,7 +201,7 @@ por severidad alegada.)*
   guardianes. Es el reverso de la regresión de la sección 1: cualquier
   arreglo debe cerrar los dos.
 
-- [ ] **`detectores:` en forma de lista YAML se convierte con `str()` y la
+- [x] **`detectores:` en forma de lista YAML se convierte con `str()` y la
   exención deja de exentar, en silencio** — `config.py:213`. `str(dets).split(",")`
   asume el escalar; con la forma de lista anidada llega una `list` y la tupla
   queda `("['clabe']",)`, que no casa ningún detector: el archivo exento
@@ -247,6 +247,6 @@ por severidad alegada.)*
 | Versión | Tema | Contenido |
 |---------|------|-----------|
 | v0.17.0 ✓ | Lo que el motor no leyó | UTF-16 sin BOM, Latin-1, el CSV de `dentro_de_un_numero`, `spec/`; y los plausibles de `dentro_de_url` que sobrevivan |
-| v0.18.0 | Las vías de callar | Severidad en la línea base, fnmatch por segmentos, la `T` del diff y las rutas C-quoted de la Action, `detectores:` en lista |
+| v0.18.0 ✓ | Las vías de callar | Severidad en la línea base, fnmatch por segmentos, la `T` del diff y las rutas C-quoted de la Action, `detectores:` en lista |
 | v0.19.0 | La regresión y los veteranos | «MiClave…» y «TuClaveAqui» (las dos caras), el teléfono con paréntesis y con punto final, los rellenos del NSS, los escapes de `_descitar` |
 | v0.20.0 | Los documentos no mienten | `recortar()` sin valores completos, el `uri` del SARIF, el truncamiento del HTML, `--config ""` |

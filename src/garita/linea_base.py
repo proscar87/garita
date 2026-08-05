@@ -60,7 +60,10 @@ from typing import Iterable
 from .nucleo import Hallazgo
 
 NOMBRE_POR_OMISION = ".garita-base.json"
-FORMATO = 1
+# 2: la clave del conteo incluye la severidad. Con la 1, un aviso congelado
+# perdonaba un ERROR nuevo del mismo detector en el mismo archivo — y con
+# `fallar_en_aviso` apagado, que es el default, el veredicto salía 0.
+FORMATO = 2
 
 
 class LineaBaseInvalida(Exception):
@@ -78,24 +81,30 @@ class LineaBase:
     creada: str
     """Fecha en que se generó. Una línea base vieja es deuda que envejece."""
     conteos: dict[str, int]
-    """«archivo\\x00detector» → cuántos hallazgos había."""
+    """«archivo\\x00detector\\x00severidad» → cuántos hallazgos había."""
     total: int
 
     @staticmethod
-    def _clave(archivo: str, detector: str) -> str:
-        return f"{archivo}\x00{detector}"
+    def _clave(archivo: str, detector: str, severidad: str) -> str:
+        # La severidad va en la clave porque varios detectores emiten aviso
+        # o error según el contexto (una CLABE dentro de una URL es aviso; a
+        # pelo, error). Sin ella, congelar un aviso perdonaba un error nuevo
+        # y el veredicto salía 0: deuda aceptada que absuelve lo que nunca
+        # se aceptó.
+        return f"{archivo}\x00{detector}\x00{severidad}"
 
     def filtrar(self, hallazgos: Iterable[Hallazgo]) -> tuple[list, list]:
         """Separa en (nuevos, ya_conocidos).
 
-        Se agrupa por archivo y detector, y se perdonan tantos hallazgos como
-        había. El orden importa: se perdonan los de línea más baja primero,
-        para que al agregar algo al final del archivo sea lo nuevo lo que
-        aparece, y no un salto arbitrario.
+        Se agrupa por archivo, detector Y severidad, y se perdonan tantos
+        hallazgos como había. El orden importa: se perdonan los de línea más
+        baja primero, para que al agregar algo al final del archivo sea lo
+        nuevo lo que aparece, y no un salto arbitrario.
         """
         por_grupo: dict[str, list[Hallazgo]] = {}
         for h in hallazgos:
-            por_grupo.setdefault(self._clave(h.archivo, h.detector), []).append(h)
+            por_grupo.setdefault(
+                self._clave(h.archivo, h.detector, h.severidad), []).append(h)
 
         nuevos, conocidos = [], []
         for clave, hs in por_grupo.items():
@@ -115,7 +124,8 @@ class LineaBase:
         que puede achicar el archivo — si no, la línea base sólo crece y
         termina perdonando cosas que nadie recuerda haber aceptado.
         """
-        vivos = Counter(self._clave(h.archivo, h.detector) for h in hallazgos)
+        vivos = Counter(
+            self._clave(h.archivo, h.detector, h.severidad) for h in hallazgos)
         return sorted(
             clave.replace("\x00", " · ")
             for clave, n in self.conteos.items()
@@ -125,7 +135,7 @@ class LineaBase:
 
 def construir(hallazgos: Iterable[Hallazgo], fecha: str) -> LineaBase:
     conteos = Counter(
-        LineaBase._clave(h.archivo, h.detector) for h in hallazgos
+        LineaBase._clave(h.archivo, h.detector, h.severidad) for h in hallazgos
     )
     return LineaBase(creada=fecha, conteos=dict(conteos), total=sum(conteos.values()))
 
@@ -139,8 +149,9 @@ def guardar(lb: LineaBase, ruta: Path) -> None:
         "total": lb.total,
         "_nota": (
             "Hallazgos que ya existían cuando se encendió Garita. No se "
-            "guarda ningún valor ni hash: sólo cuántos había por archivo y "
-            "detector. Esto es deuda aceptada, no deuda perdonada — bórrala "
+            "guarda ningún valor ni hash: sólo cuántos había por archivo, "
+            "detector y severidad. Esto es deuda aceptada, no deuda "
+            "perdonada — bórrala "
             "conforme la pagues. Regenerar: garita --linea-base"
         ),
         "conteos": {
@@ -182,12 +193,14 @@ def cargar(ruta: Path) -> LineaBase | None:
             raise LineaBaseInvalida(
                 f"{ruta}: «{clave}» tiene un conteo inválido ({n!r})."
             )
-        if "::" not in clave:
+        resto, _, severidad = clave.rpartition("::")
+        archivo, _, detector = resto.rpartition("::")
+        if not archivo or not detector or severidad not in ("error", "aviso"):
             raise LineaBaseInvalida(
-                f"{ruta}: la clave «{clave}» no trae «archivo::detector»."
+                f"{ruta}: la clave «{clave}» no trae "
+                f"«archivo::detector::severidad»."
             )
-        archivo, _, detector = clave.rpartition("::")
-        conteos[LineaBase._clave(archivo, detector)] = n
+        conteos[LineaBase._clave(archivo, detector, severidad)] = n
 
     return LineaBase(
         creada=str(datos.get("creada", "?")),

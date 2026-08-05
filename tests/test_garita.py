@@ -1664,6 +1664,128 @@ class ElCanalDeActions(unittest.TestCase):
         self.assertEqual(codigo, 2, salida)
 
 
+class LasViasDeCallar(unittest.TestCase):
+    """v0.18.0: las dos vías legítimas de callar a Garita, y el filtro de
+    la Action — las tres callaban de más.
+    """
+
+    CLABE = "002180000645829179"
+
+    def test_un_aviso_congelado_no_absuelve_un_error_nuevo(self):
+        # La CLABE dentro de una URL es aviso; a pelo, error. Sin la
+        # severidad en la clave, el error nuevo consumía el perdón del
+        # aviso viejo y con fallar_en_aviso apagado el veredicto era 0.
+        url = f"ver https://banco.invalido/cuenta/{self.CLABE}/estado\n"
+        td = repo_temporal({"datos.txt": f"nota\n{url}"})
+        with td:
+            raiz = Path(td.name)
+            codigo, salida = correr_garita(raiz, "--linea-base")
+            self.assertEqual(codigo, 0, salida)
+            (raiz / "datos.txt").write_text(
+                f"CLABE destino: {self.CLABE}\nnota\n{url}", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz)
+            self.assertEqual(codigo, 1, salida)
+
+    def test_la_deuda_del_mismo_nivel_sigue_perdonandose(self):
+        td = repo_temporal({"datos.txt": f"CLABE {self.CLABE}\n"})
+        with td:
+            raiz = Path(td.name)
+            correr_garita(raiz, "--linea-base")
+            codigo, salida = correr_garita(raiz)
+            self.assertEqual(codigo, 0, salida)
+            self.assertIn("nada nuevo", salida)
+
+    def test_el_asterisco_de_la_exencion_no_cruza_las_barras(self):
+        from garita.nucleo import casa_ruta
+        self.assertFalse(casa_ruta("tests_reales/datos.txt", "tests*"))
+        self.assertFalse(casa_ruta("tests/algo.txt", "tests*"))
+        # Las formas que sí se quieren decir.
+        self.assertTrue(casa_ruta("tests/algo.txt", "tests/*"))
+        self.assertTrue(casa_ruta("tests/hondo/algo.txt", "tests/**"))
+        self.assertTrue(casa_ruta("tests/algo.txt", "tests/**"))
+        self.assertTrue(casa_ruta("docs/IDENTIFICADORES.md",
+                                  "docs/IDENTIFICADORES.md"))
+        self.assertTrue(casa_ruta("src/a/b.py", "**/b.py"))
+        self.assertFalse(casa_ruta("src/a/b.py", "*.py"))
+
+    def test_exencion_que_ya_no_casa_se_reporta_muerta(self):
+        # Falla ruidosa en vez de absorción silenciosa: quien escribió
+        # «tests*» se entera de que quería «tests/**».
+        td = repo_temporal({
+            "tests_reales/datos.txt": f"CLABE {self.CLABE}\n",
+            ".garita.yml": ("exenciones:\n  - archivo: tests*\n"
+                            "    motivo: fixtures\n"),
+        })
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("no aplicaron", salida)
+
+    def test_detectores_en_forma_de_lista_yaml(self):
+        # Llegaba como list, str() la volvía «['clabe']» y la exención
+        # dejaba de exentar en silencio.
+        td = repo_temporal({
+            "datos.txt": f"CLABE {self.CLABE}\n",
+            ".garita.yml": ("exenciones:\n  - archivo: datos.txt\n"
+                            "    motivo: inventados\n"
+                            "    detectores:\n      - clabe\n"),
+        })
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 0, salida)
+
+    @unittest.skipIf(os.name == "nt", "el escenario usa enlaces simbólicos")
+    def test_el_pr_ve_los_cambios_de_tipo_y_las_rutas_con_acentos(self):
+        # Dos defectos en el mismo camino: un symlink reemplazado por
+        # archivo regular es estado T (excluido por ACMR, el PR salía
+        # verde), y las rutas no ASCII venían citadas por git, con lo que
+        # la CLI respondía «no existe el archivo» y tumbaba el paso
+        # entero con código 2 sin revisar nada.
+        import importlib.util
+        ruta = Path(__file__).resolve().parent.parent / "scripts/ejecutar.py"
+        spec = importlib.util.spec_from_file_location("garita_action", ruta)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        def git(cwd, *args):
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                            *args], cwd=cwd, check=True,
+                           capture_output=True)
+
+        with TemporaryDirectory() as d:
+            origen = Path(d) / "origen"
+            origen.mkdir()
+            git(origen, "init", "-q", "-b", "main")
+            (origen / "leeme.md").write_text("base\n", encoding="utf-8")
+            (origen / "config.txt").symlink_to("/etc/hosts")
+            git(origen, "add", "-A")
+            git(origen, "commit", "-qm", "base")
+            git(origen, "checkout", "-qb", "feature")
+            (origen / "config.txt").unlink()
+            (origen / "config.txt").write_text(
+                f"CLABE destino: {self.CLABE}\n", encoding="utf-8")
+            (origen / "señales.csv").write_text(
+                f"CLABE {self.CLABE}\n", encoding="utf-8")
+            (origen / "leeme.md").write_text("base\nmás\n", encoding="utf-8")
+            git(origen, "add", "-A")
+            git(origen, "commit", "-qm", "pr")
+
+            clon = Path(d) / "clon"
+            subprocess.run(["git", "clone", "-q", f"file://{origen}",
+                            str(clon), "--branch", "feature"], check=True,
+                           capture_output=True)
+            antes = os.getcwd()
+            os.chdir(clon)
+            try:
+                archivos = mod.archivos_del_pr({"GITHUB_BASE_REF": "main"})
+            finally:
+                os.chdir(antes)
+        # El typechange entra, y el nombre con ñ llega sin comillas.
+        self.assertIn("config.txt", archivos)
+        self.assertIn("señales.csv", archivos)
+
+
 class HistorialCompleto(unittest.TestCase):
     """La auditoría ve ramas remotas y rutas con acentos. (v0.10.0)"""
 

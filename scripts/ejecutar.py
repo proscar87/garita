@@ -18,9 +18,18 @@ def archivos_del_pr(entorno=os.environ) -> list[str]:
     rápido pero ciego a lo que ya estaba. Sirve para dar respuesta veloz en
     cada pull request, no para sustituir una revisión completa.
 
-    `--diff-filter=ACMR`: la R es la que hace que un archivo renombrado se
-    reporte por su ruta NUEVA, que es donde hay que revisarlo. Los borrados
-    (D) no aparecen: no se puede revisar lo que ya no está.
+    `--diff-filter=ACMRT`: la R es la que hace que un archivo renombrado se
+    reporte por su ruta NUEVA, que es donde hay que revisarlo. La T cubre el
+    cambio de tipo —un symlink que pasa a ser archivo regular—, que trae
+    contenido nuevo como cualquier otro; sin ella ese archivo no se revisaba
+    y el PR salía en verde. Los borrados (D) no aparecen: no se puede
+    revisar lo que ya no está.
+
+    `-z`: los nombres se leen separados por NUL. Sin esto git cita los que
+    llevan acentos o ñ —«"se\\303\\261ales.csv"»— y esa cadena literal
+    llegaba a la CLI, que respondía «no existe el archivo» con código 2:
+    en una herramienta escrita para equipos hispanohablantes, un PR
+    legítimo fallaba entero sin revisar ni un archivo.
     """
     base = entorno.get("GITHUB_BASE_REF")
     if not base:
@@ -28,10 +37,11 @@ def archivos_del_pr(entorno=os.environ) -> list[str]:
     subprocess.run(["git", "fetch", "--depth=1", "origin", base],
                    check=False, capture_output=True)
     r = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=ACMR", f"origin/{base}...HEAD"],
+        ["git", "diff", "-z", "--name-only", "--diff-filter=ACMRT",
+         f"origin/{base}...HEAD"],
         capture_output=True, text=True,
     )
-    return [f for f in r.stdout.splitlines() if f.strip()]
+    return [f for f in r.stdout.split("\0") if f.strip()]
 
 
 def argumentos(entorno=os.environ) -> list[str]:

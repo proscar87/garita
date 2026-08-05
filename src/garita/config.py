@@ -209,8 +209,19 @@ def cargar(raiz: Path, nombre: str = NOMBRE_ARCHIVO) -> Config:
                 f"convierte, en pocos meses, en la lista de archivos que "
                 f"nadie se atreve a tocar porque nadie sabe por qué están ahí."
             )
+        # La forma de lista YAML («detectores:» y guiones debajo) llegaba
+        # como list, y str() la volvía «['clabe']»: la exención no casaba
+        # ningún detector y dejaba de exentar EN SILENCIO — el patrón sí
+        # coincidía, así que tampoco salía como exención muerta.
         dets = e.get("detectores", "")
-        detectores = tuple(d.strip() for d in str(dets).split(",") if d.strip())
+        if isinstance(dets, (list, tuple)):
+            dets = ",".join(str(d) for d in dets)
+        elif not isinstance(dets, str):
+            raise ConfigInvalida(
+                f"la exención de «{archivo}» tiene «detectores: {dets!r}», "
+                f"que no es una lista ni una lista separada por comas."
+            )
+        detectores = tuple(d.strip() for d in dets.split(",") if d.strip())
         exenciones.append(Exencion(str(archivo), str(motivo), detectores))
 
     paises = datos.get("paises", "")

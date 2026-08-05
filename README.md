@@ -389,6 +389,11 @@ evaluar si sigue siendo válido.
 Las exenciones se acotan por detector: exentar un archivo de `curp` no debería
 exentarlo también de `llave_privada`.
 
+**El `archivo` casa por segmentos**: `*` no cruza las barras y `**` sí. Para
+una carpeta entera se escribe `tests/**`, no `tests*` — este último no casa
+nada y sale reportado como exención que no aplicó, en vez de tragarse en
+silencio `tests_reales/` y todo lo que empiece igual.
+
 ---
 
 ## Cómo se ve un hallazgo
