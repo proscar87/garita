@@ -73,7 +73,10 @@ PATRONES: list[tuple[str, re.Pattern[str], str, str]] = [
             # Stripe: sólo `_live_`. La de `_test_` aparece a propósito en
             # media documentación del mundo y no toca dinero real.
             r"|[sr]k_live_[A-Za-z0-9]{16,}"
-            r"|gh[opsur]_[A-Za-z0-9]{36}"         # GitHub: personal, OAuth, app…
+            # GitHub: personal, OAuth, app… La cota es INFERIOR: ghp_/gho_/
+            # ghs_/ghu_ miden 36 tras el prefijo, pero los refresh ghr_
+            # vigentes miden 76 y con longitud exacta no casaban jamás.
+            r"|gh[opsur]_[A-Za-z0-9]{36,}"
             r"|github_pat_[A-Za-z0-9_]{22,}"      # GitHub fine-grained
             r"|npm_[A-Za-z0-9]{36}"               # npm granular
             r"|AKIA[0-9A-Z]{16}"                  # AWS
@@ -134,20 +137,42 @@ MARCADORES = re.compile(
 
 # «tuclave», «yourkey123»: sin separador sólo son marcador siendo el valor
 # entero. Dentro de un token largo, «tu» es subcadena de media base64.
-_POSESIVO_ES_TODO = re.compile(r"(?i)^[\W_]*(tu|your)[_-]?\w+[\W_\d]*$")
+# Y el resto tiene que ser un SUSTANTIVO de marcador: con `\w+` pelón,
+# cualquier valor que empezara por tu/your («Turquesa9Fuerte42x», una
+# contraseña «Turbina…» en una URL de conexión) se absolvía entero.
+_POSESIVO_ES_TODO = re.compile(
+    r"(?i)^[\W_]*(tu|your)[_-]?"
+    r"(clave|llave|secreto|contrase[nñ]a|pass(word)?|secret|key|token"
+    r"|api[_-]?key|user|usuario|valor|value)s?[\W_\d]*$"
+)
 
 
 def _marcador_delimitado(v: str) -> bool:
-    """¿Hay un marcador que no esté incrustado entre letras?
+    """¿Hay un marcador delimitado de verdad dentro del valor?
 
-    «AKIAIOSFODNN7EXAMPLE» sigue siendo ejemplo (el «EXAMPLE» va tras un
-    dígito y cierra el valor); «VirtualPass2024» ya no se descarta (su «tu»
-    vive dentro de «Virtual»).
+    Tres reglas, cada una con su cicatriz:
+    - La transición minúscula→Mayúscula cuenta como frontera: los
+      placeholders camelCase («DummyPassword1234», «FakeApiKey…») son el
+      estilo de media documentación JS/Java y dejaron de absolverse en
+      v0.9.0 por accidente.
+    - Un dígito sólo cuenta como frontera si el OTRO extremo del marcador
+      toca el borde del valor: así «AKIAIOSFODNN7EXAMPLE» sigue siendo
+      ejemplo, pero «fake» o «EXAMPLE» flotando entre dígitos dentro de
+      una llave con formato de proveedor ya no la absuelven.
+    - «VirtualPass2024» no se descarta: su «tu» vive dentro de «Virtual»
+      y ni siquiera casa MARCADORES.
     """
     for m in MARCADORES.finditer(v):
         a, b = m.span()
-        if ((a == 0 or not v[a - 1].isalpha())
-                and (b == len(v) or not v[b].isalpha())):
+        ini = (a == 0
+               or not v[a - 1].isalnum()
+               or (v[a - 1].islower() and v[a].isupper())
+               or (b == len(v) and not v[a - 1].isalpha()))
+        fin = (b == len(v)
+               or not v[b].isalnum()
+               or (v[b - 1].islower() and v[b].isupper())
+               or (a == 0 and not v[b].isalpha()))
+        if ini and fin:
             return True
     return False
 

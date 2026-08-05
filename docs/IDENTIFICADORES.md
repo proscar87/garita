@@ -379,12 +379,14 @@ veces; «c.i.» con puntos sí, porque así la abrevian los documentos. Exentos
 
 ## Venezuela — RIF
 
-Letra + 8 dígitos + verificador. La letra vale V=1, E=2, J=3, P=4, G=5 y se
-multiplica por 4; los dígitos, por `3-2-7-6-5-4-3-2`; módulo 11, y si 11
-menos el residuo pasa de 9, el verificador es 0. El SENIAT no publica la
-fórmula — la misma situación que el CURP — así que se usa el estándar de la
-industria comprobado contra RIF públicos de entidades: el del propio SENIAT
-(`G-20000303-0`) y el de PDVSA (`J-00123072-6`) reproducen.
+Letra + 8 dígitos + verificador. La letra vale V=1, E=2, J=3, P=4, G=5 —y
+C=3, igual que J: los consejos comunales y comunas llevan C desde 2015,
+migrados de la J por el propio SENIAT— y se multiplica por 4; los dígitos,
+por `3-2-7-6-5-4-3-2`; módulo 11, y si 11 menos el residuo pasa de 9, el
+verificador es 0. El SENIAT no publica la fórmula — la misma situación que
+el CURP — así que se usa el estándar de la industria comprobado contra RIF
+públicos de entidades: el del propio SENIAT (`G-20000303-0`) y el de PDVSA
+(`J-00123072-6`) reproducen.
 
 **El RIF de V o E contiene la cédula** de la persona en sus ocho dígitos —
 el mismo atajo que el CUIT argentino y el RUC peruano, porque la cédula

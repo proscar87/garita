@@ -294,6 +294,56 @@ class CalibracionDeSecretos(unittest.TestCase):
         self.assertIn("Kx9m", hs[0].que)
 
 
+class SilenciosDeMarcadores(unittest.TestCase):
+    """v0.13.0: la segunda oleada encontró cuatro maneras nuevas de callar.
+
+    Un refresh token más largo que su cuantificador, un posesivo que
+    absolvía cualquier palabra, un marcador flotando entre dígitos, y la
+    regresión inversa: los placeholders camelCase que dejaron de absolverse.
+    """
+
+    def test_refresh_token_de_github_de_76_caracteres(self):
+        # ghp_/gho_/ghs_/ghu_ miden 36 tras el prefijo; los ghr_ vigentes
+        # miden 76 y el {36} exacto con \b los dejaba pasar todos.
+        self.assertTrue(list(buscar("token = ghr_" + "Ab12" * 19, "x")))
+        # Las variantes de 36 siguen casando con la cota inferior.
+        self.assertTrue(list(buscar("t = ghp_" + "A" * 30 + "123456", "x")))
+
+    def test_empezar_por_tu_no_vuelve_marcador_al_valor(self):
+        # El \w+ pelón del posesivo absolvía «Turquesa9Fuerte42x» entero;
+        # una contraseña que arranque en «Tu» salía limpia de la URL.
+        self.assertFalse(es_marcador("Turquesa9Fuerte42x"))
+        self.assertTrue(list(buscar(
+            "postgres://admin:Turbina88Xk@db.prod.interno:5432/app", "x")))
+
+    def test_el_posesivo_con_sustantivo_de_marcador_sigue_exento(self):
+        for v in ("tuclave", "your_token", "TU_PASSWORD_DE_DEV",
+                  "tu_contrasena", "yourkey123"):
+            self.assertTrue(es_marcador(v), v)
+
+    def test_marcador_entre_digitos_no_absuelve_la_llave(self):
+        # La excepción pensada para AKIAIOSFODNN7EXAMPLE se había
+        # generalizado: cualquier «fake» o «EXAMPLE» entre dígitos dentro
+        # de una llave con formato de proveedor la absolvía.
+        self.assertTrue(list(buscar(
+            "OPENAI_API_KEY=sk-Ab3Ru8Kp0Zw9fake2Xy7Qm4Rt8Kp", "x")))
+        self.assertTrue(list(buscar("AKIA2EXAMPLE3XVWQP4J", "x")))
+        # La canónica de AWS sigue exenta: su marcador cierra el valor.
+        self.assertTrue(es_marcador("AKIAIOSFODNN7EXAMPLE"))
+
+    def test_placeholder_camelcase_vuelve_a_absolverse(self):
+        # Regresión de v0.9.0: la frontera no reconocía la transición
+        # minúscula→Mayúscula, el estilo de media documentación JS/Java.
+        for v in ("DummyPassword1234", "FakeApiKey12345678",
+                  "ExampleTokenValue1"):
+            self.assertTrue(es_marcador(v), v)
+        self.assertFalse(list(buscar_asignaciones(
+            'password = "DummyPassword1234"', "x")))
+        # Y lo que nunca fue placeholder sigue sin absolverse.
+        self.assertFalse(es_marcador("VirtualPass2024"))
+        self.assertFalse(es_marcador("kR9mQz2Xv7Lp4Wn8"))
+
+
 class Fuentes(unittest.TestCase):
     def cargar(self, contenido: str, spec: str = "gen.py:PROHIBIDOS"):
         with TemporaryDirectory() as d:
@@ -1977,6 +2027,18 @@ class PaisesNuevos3(unittest.TestCase):
     def test_rif_repetido_es_relleno(self):
         d = self._det("rif", "ve")
         self.assertFalse(list(d.buscar("RIF J-00000000-0 de prueba", "x")))
+
+    def test_rif_con_letra_c_de_consejo_comunal(self):
+        # El SENIAT emite RIF con C (consejos comunales y comunas, migrados
+        # de la J desde 2015); C vale 3, igual que J, y la clase del regex
+        # la omitía: un RIF C válido ni siquiera casaba. Vector derivado
+        # del de PDVSA: mismos dígitos, letra de igual valor.
+        from garita.detectores.paises.ve import rif_valido
+        self.assertTrue(rif_valido("C-00123072-6"))
+        d = self._det("rif", "ve")
+        self.assertTrue(list(d.buscar("RIF C-00123072-6 del consejo", "x")))
+        # El repetido con C también es relleno.
+        self.assertFalse(list(d.buscar("RIF C-00000000-0 de prueba", "x")))
 
     # ── Paraguay ──
     def test_ruc_py_reproduce_los_de_la_documentacion(self):

@@ -24,7 +24,7 @@ no aislaba `GITHUB_ACTIONS`.
 
 ### Los silencios de los marcadores (secretos.py)
 
-- [ ] **`gh[opsur]_{36}` exacto pierde los refresh tokens `ghr_` de GitHub**
+- [x] **`gh[opsur]_{36}` exacto pierde los refresh tokens `ghr_` de GitHub**
   — `src/garita/detectores/secretos.py:76`. Las variantes `ghp_/gho_/ghs_/ghu_`
   miden 36 tras el prefijo, pero los `ghr_` vigentes miden 76: con longitud
   exacta seguida de `\b` no casan jamás y el CLI aprueba con 0 un refresh
@@ -32,7 +32,7 @@ no aislaba `GITHUB_ACTIONS`.
   cierre hace que el de 76 case entero y los de 36 sigan igual. Prueba con un
   `ghr_` sintético de 76.
 
-- [ ] **`_POSESIVO_ES_TODO` absuelve cualquier valor que empiece por
+- [x] **`_POSESIVO_ES_TODO` absuelve cualquier valor que empiece por
   tu/your** — `src/garita/detectores/secretos.py:137`. El `[_-]?` es opcional
   y el `\w+` traga el resto: «Turquesa9Fuerte42x» es marcador, y una URL de
   conexión con contraseña que arranque en «Tu» sale limpia con 0 (control: la
@@ -40,7 +40,7 @@ no aislaba `GITHUB_ACTIONS`.
   acotar el `\w+` a sustantivos de marcador (clave, llave, secreto, password,
   secret, key, token…); los casos con separador ya los cubre MARCADORES.
 
-- [ ] **Los dígitos cuentan como frontera: un marcador entre dígitos absuelve
+- [x] **Los dígitos cuentan como frontera: un marcador entre dígitos absuelve
   llaves con formato de proveedor** — `src/garita/detectores/secretos.py:149`.
   `_marcador_delimitado` solo exige no-letra (`isalpha`), así que «fake» o
   «EXAMPLE» rodeados de dígitos dentro de una llave que sí casa
@@ -50,7 +50,7 @@ no aislaba `GITHUB_ACTIONS`.
   extremo del marcador toca el borde del valor — así la canónica
   `AKIA…7EXAMPLE` sigue exenta y el marcador interior deja de absolver.
 
-- [ ] **Regresión v0.9.0: los placeholders camelCase ya no se absuelven** —
+- [x] **Regresión v0.9.0: los placeholders camelCase ya no se absuelven** —
   `src/garita/detectores/secretos.py:150`. «DummyPassword1234»,
   «FakeApiKey12345678» eran marcador en v0.7.0 y ahora emiten un aviso cada
   uno: la frontera no reconoce la transición minúscula→Mayúscula, el estilo
@@ -60,7 +60,7 @@ no aislaba `GITHUB_ACTIONS`.
 
 ### Detectores de país
 
-- [ ] **RIF con prefijo C (consejos comunales) es invisible** —
+- [x] **RIF con prefijo C (consejos comunales) es invisible** —
   `src/garita/detectores/paises/ve.py:26`. La clase del regex y `_LETRAS`
   omiten la C, que el SENIAT emite desde 2015 (más de 45 000 comunas migradas
   de J a C) y que vale 3 en el algoritmo, igual que J. Un RIF C válido con
@@ -173,7 +173,7 @@ trae receta del buscador, pero nadie lo ha reproducido con adversario.)*
 
 | Versión | Tema | Contenido |
 |---------|------|-----------|
-| v0.13.0 | Los silencios de los marcadores | Los cuatro de secretos.py + el RIF C |
+| v0.13.0 ✓ | Los silencios de los marcadores | Los cuatro de secretos.py + el RIF C |
 | v0.14.0 | El canal de Actions y los veredictos | Inyección de rutas, los `open()` desnudos, `--explicar` mandón; los plausibles de CLI que sobrevivan |
 | v0.15.0 | Historial completo | HEAD en el alcance; los plausibles de historial que sobrevivan |
 | continuo | Calibración | Exentos oficiales de VE/GT/PY y los plausibles de país que sobrevivan |
