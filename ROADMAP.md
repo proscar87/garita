@@ -132,11 +132,11 @@ ASCII enteras, y pruebas para `fallar_en_aviso` y `--explicar`.)*
   limpias. Cotejado contra Banxico en agosto 2026; los históricos se
   conservan porque una CLABE vieja sigue siendo la cuenta de alguien.)*
 
-- [ ] **`docs/IDENTIFICADORES.md` cubre solo México** aunque el README lo
+- [x] **`docs/IDENTIFICADORES.md` cubre solo México** aunque el README lo
   enlaza como la referencia de los 13 países y `AGREGAR_PAIS.md` exige una
-  sección por país. O se agregan las 12 secciones que faltan (los datos ya
-  viven en los docstrings), o README y AGREGAR_PAIS pasan a señalar los
-  módulos como fuente de verdad.
+  sección por país. *(Se agregaron las 12 secciones — estructura, algoritmo,
+  política de refuerzo/contexto, exentos y fuente por país, extraídas de los
+  docstrings — y la lista de fuentes creció de 5 a 17 entradas.)*
 
 - [ ] **Más países**, en el orden en que se consigan reglas verificables
   contra fuente oficial (la doctrina de `AGREGAR_PAIS.md`: un detector
