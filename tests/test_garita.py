@@ -1718,8 +1718,13 @@ class AlcanceDelHistorial(unittest.TestCase):
             (raiz / "c.txt").write_text("main\n", encoding="utf-8")
             subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
             self._commit(raiz, "c3")
-            subprocess.run(["git", "merge", "lado", "--no-commit",
-                            "--no-ff", "-q"], cwd=raiz, check=True)
+            # El merge también exige identidad (para el reflog), aunque
+            # sea --no-commit; sin las -c truena donde no hay gitconfig
+            # global — o sea, en CI y en ninguna máquina de desarrollo.
+            subprocess.run(["git", "-c", "user.name=t",
+                            "-c", "user.email=t@t", "merge", "lado",
+                            "--no-commit", "--no-ff", "-q"],
+                           cwd=raiz, check=True)
             (raiz / "colado.py").write_text(
                 'password = "Kx9mPqR2vNw8LtY4"\n', encoding="utf-8")
             subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
