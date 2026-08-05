@@ -203,6 +203,13 @@ def _clabe_es_relleno(clabe: str) -> bool:
     return cuenta in ("0" * 11, "9" * 11)
 
 
+def _nss_es_relleno(nss: str) -> bool:
+    """El todo-ceros pasa Luhn (suma 0) y es el campo vacío de cualquier
+    plantilla o export; el todo-nueves, el relleno de la otra mitad. Sus
+    hermanos de este archivo ya tenían su lista de exentos; el NSS no."""
+    return nss in ("0" * 11, "9" * 11)
+
+
 def _banco_existe(clabe: str) -> bool:
     return clabe[:3] in _BANCOS
 
@@ -252,11 +259,16 @@ _TELEFONO = re.compile(r"""
     (?<![\d.])
     (?P<prefijo>\+?52[\s.-]?1?[\s.-]?)?
     (?P<numero>
-        (?P<lada2>55|56|33|81)[\s.-]?\d{4}[\s.-]?\d{4}
-      | (?P<lada3>[2-9]\d{2})[\s.-]?\d{3}[\s.-]?\d{4}
+        \(?(?P<lada2>55|56|33|81)\)?[\s.-]?\d{4}[\s.-]?\d{4}
+      | \(?(?P<lada3>[2-9]\d{2})\)?[\s.-]?\d{3}[\s.-]?\d{4}
     )
-    (?![\d.])
+    (?!\.?\d)
 """, re.VERBOSE)
+# Los paréntesis alrededor de la lada son la forma impresa más común del
+# país —directorios, firmas de correo, volcados de CRM— y no casaban con
+# nada. Y el cierre mira `\.?\d` en vez de `[\d.]` para que el punto que
+# termina una oración no apague el detector: el teléfono en prosa es
+# justo el que se escribe con punto final.
 # Las ramas llevan la lada en su propio grupo porque los dígitos solos no
 # la determinan: diez dígitos que empiezan en 555 pueden agruparse
 # 55-XXXX-XXXX (lada 55, CDMX) o 555-XXX-XXXX (el 555 ficticio de
@@ -336,7 +348,7 @@ def _buscar_nss(texto: str, archivo: str) -> Iterator[Hallazgo]:
             continue
         for m in _NSS.finditer(linea):
             v = m.group(0)
-            if not nss_valido(v):
+            if not nss_valido(v) or _nss_es_relleno(v):
                 continue
             yield _hallazgo(archivo, i, "nss", v,
                             "Es un número de seguridad social válido, "

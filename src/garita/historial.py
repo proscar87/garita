@@ -142,7 +142,12 @@ def _descitar(ruta: str) -> str:
         return ruta
     cuerpo = ruta[1:-1]
     crudo = bytearray()
-    simples = {'"': b'"', "\\": b"\\", "t": b"\t", "n": b"\n", "r": b"\r"}
+    # Los siete que emite quote.c de git, no sólo los cinco obvios: sin
+    # \a \b \v \f la ruta quedaba con el backslash literal, distinta de la
+    # cruda que da rev-list, y el blob recuperaba su ruta fantasma — el
+    # bug que esta función existe para cerrar.
+    simples = {'"': b'"', "\\": b"\\", "t": b"\t", "n": b"\n", "r": b"\r",
+               "a": b"\a", "b": b"\b", "v": b"\v", "f": b"\f"}
     i = 0
     while i < len(cuerpo):
         c = cuerpo[i]

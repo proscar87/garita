@@ -128,22 +128,35 @@ PATRONES: list[tuple[str, re.Pattern[str], str, str]] = [
 # entre letras (ver `_marcador_delimitado`) — así «7EXAMPLE» al final de la
 # llave de AWS sigue contando y el «tu» de «Virtual» ya no. Y «tu…»/«your…»
 # pegado a cualquier cosa sólo absuelve si ES el valor completo.
+# «mi clave» NO está aquí, a propósito: con la frontera camelCase de abajo,
+# tenerlo convertía «MiClave»/«MiSecreto» en PREFIJO absolutorio, y así se
+# llama la contraseña que una persona se pone a sí misma en español —
+# «MiClaveSegura2024» salía limpia de una URL de producción. Como valor
+# completo («miClave», «mi_secreto») sigue absuelto por _ES_TODO_MARCADOR,
+# que ya lleva su propio prefijo `m[iy]`.
+# «your» exige separador igual que «tu»: con el `?` absolvía «yourself…» y
+# cualquier valor que empezara así, la misma falla que «mi clave» por otra
+# puerta. Sin separador los cubre _POSESIVO_ES_TODO, que sí pide sustantivo.
 MARCADORES = re.compile(
-    r"(?i)(tu[_-]\w+|your[_-]?\w+|mi[_-]?(clave|llave|secreto)|xxx+|placeholder"
+    r"(?i)(tu[_-]\w+|your[_-]\w+|xxx+|placeholder"
     r"|cambiame|change[_-]?me"
     r"|ejemplo|example|dummy|fake|test[_-]?key|redacted|s3cr3t|hunter2"
     r"|lorem|ipsum)"
 )
 
-# «tuclave», «yourkey123»: sin separador sólo son marcador siendo el valor
-# entero. Dentro de un token largo, «tu» es subcadena de media base64.
-# Y el resto tiene que ser un SUSTANTIVO de marcador: con `\w+` pelón,
-# cualquier valor que empezara por tu/your («Turquesa9Fuerte42x», una
-# contraseña «Turbina…» en una URL de conexión) se absolvía entero.
+# «tuclave», «yourkey123», «TuClaveAqui»: sin separador sólo son marcador
+# siendo el valor entero, y el sustantivo tiene que venir PEGADO al
+# posesivo — con `\w+` pelón, cualquier valor que empezara por tu/your
+# («Turquesa9Fuerte42x», una contraseña «Turbina…») se absolvía.
+#
+# Después del sustantivo sí se admite cola («TuClaveAqui», «your_key_here»)
+# y esto NO vale para «mi…»: la asimetría es del idioma, no un descuido.
+# «Tu clave» se escribe DIRIGIÉNDOSE a quien lee — es una plantilla. «Mi
+# clave» es como se nombra la propia, y ésa es de verdad.
 _POSESIVO_ES_TODO = re.compile(
     r"(?i)^[\W_]*(tu|your)[_-]?"
     r"(clave|llave|secreto|contrase[nñ]a|pass(word)?|secret|key|token"
-    r"|api[_-]?key|user|usuario|valor|value)s?[\W_\d]*$"
+    r"|api[_-]?key|user|usuario|valor|value)\w*[\W_\d]*$"
 )
 
 
@@ -183,8 +196,8 @@ _RELLENO = re.compile(r"(?i)^[\W_]*(abcdef(ghi?j?k?)?|123456(789?0?)?|foo|bar|ba
 
 # Valores que SON el marcador completo, no que lo contienen.
 _ES_TODO_MARCADOR = re.compile(
-    r"(?i)^[\W_]*(m[iy][\W_]?)?(pass(word)?|clave|secreto|secret|contrase[nñ]a"
-    r"|user|usuario"
+    r"(?i)^[\W_]*(m[iy][\W_]?)?(pass(word)?|clave|llave|secreto|secret"
+    r"|contrase[nñ]a|user|usuario"
     r"|admin|root|token|apikey|api[_-]?key|value|valor)[\W_\d]*$"
 )
 

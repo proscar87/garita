@@ -430,6 +430,72 @@ class LoQueElMotorNoLeia(unittest.TestCase):
         self.assertTrue(es_de_prueba("spec/fixtures/llave.pem"))
 
 
+class LaRegresionYLosVeteranos(unittest.TestCase):
+    """v0.19.0: las dos caras del posesivo, y lo que los detectores más
+    viejos nunca cubrieron.
+    """
+
+    def test_mi_clave_no_absuelve_lo_que_le_sigue(self):
+        # Regresión de v0.13.0: con «mi clave» en MARCADORES, la frontera
+        # camelCase lo volvía prefijo absolutorio — y así se llama la
+        # contraseña que uno se pone a sí mismo en español.
+        self.assertFalse(es_marcador("MiClaveSegura2024"))
+        self.assertFalse(es_marcador("MiSecretoNuclear99"))
+        self.assertTrue(list(buscar(
+            "DATABASE_URL=postgres://admin:MiClaveSegura2024@db.prod/ventas",
+            "config.py")))
+
+    def test_mi_clave_como_valor_entero_sigue_exenta(self):
+        for v in ("miClave", "mi_secreto", "mi-llave", "MiClave", "mypassword"):
+            self.assertTrue(es_marcador(v), v)
+
+    def test_tu_clave_con_cola_vuelve_a_absolverse(self):
+        # La otra cara: «TuClaveAqui» es el placeholder de toda plantilla.
+        # La asimetría con «mi…» es del idioma — «tu clave» se escribe
+        # dirigiéndose a quien lee.
+        for v in ("TuClaveAqui", "tuPasswordAqui", "your_key_here",
+                  "TU_TOKEN_AQUI"):
+            self.assertTrue(es_marcador(v), v)
+        self.assertFalse(list(buscar(
+            "DATABASE_URL=postgres://usuario:TuClaveAqui@localhost:5432/app",
+            "README.md")))
+
+    def test_el_posesivo_sin_sustantivo_sigue_sin_absolver(self):
+        for v in ("Turquesa9Fuerte42x", "Turbina88Xk", "yourself2024xyz"):
+            self.assertFalse(es_marcador(v), v)
+
+    def test_telefono_con_lada_entre_parentesis(self):
+        # La forma impresa más común del país no casaba con nada.
+        from garita.detectores.paises.mx import _buscar_telefono
+        for linea in ("Tel: (55) 1234-5678", "Tel: +52 (55) 1234-5678",
+                      "Contacto: (833) 123-4567"):
+            self.assertTrue(list(_buscar_telefono(linea + "\n", "a")), linea)
+
+    def test_telefono_al_final_de_una_oracion(self):
+        from garita.detectores.paises.mx import _buscar_telefono
+        self.assertTrue(list(_buscar_telefono(
+            "Llama al tel 55 1234 5678.\n", "a")))
+        # Y el decimal que el lookahead protege sigue protegido.
+        self.assertFalse(list(_buscar_telefono(
+            "valor 55 1234 5678.9\n", "a")))
+
+    def test_nss_de_relleno_no_es_hallazgo(self):
+        from garita.config import Config
+        from garita.detectores.paises.mx import detectores as mx
+        d = {x.nombre: x for x in mx(Config())}["nss"]
+        self.assertFalse(list(d.buscar('nss = "00000000000"\n', "x")))
+        self.assertFalse(list(d.buscar("imss: 99999999999\n", "x")))
+        # El NSS de verdad sigue siendo error.
+        self.assertTrue(list(d.buscar("nss: 92988084494\n", "x")))
+
+    def test_descitar_conoce_los_siete_escapes_de_git(self):
+        from garita.historial import _descitar
+        self.assertEqual("tests/ca\amp.txt", _descitar('"tests/ca\\amp.txt"'))
+        self.assertEqual("a\bb", _descitar('"a\\bb"'))
+        self.assertEqual("peña.pem", _descitar('"pe\\303\\261a.pem"'))
+        self.assertEqual('pe"a.pem', _descitar('"pe\\"a.pem"'))
+
+
 class Fuentes(unittest.TestCase):
     def cargar(self, contenido: str, spec: str = "gen.py:PROHIBIDOS"):
         with TemporaryDirectory() as d:

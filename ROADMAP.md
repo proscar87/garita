@@ -116,7 +116,7 @@ Las dos oleadas anteriores quedaron saldadas: la primera en v0.8.0–v0.12.0
 
 ### Los detectores veteranos
 
-- [ ] **El teléfono mexicano no admite la lada entre paréntesis** —
+- [x] **El teléfono mexicano no admite la lada entre paréntesis** —
   `src/garita/detectores/paises/mx.py:255`. Ninguna rama de `_TELEFONO`
   acepta `(` o `)`, así que la forma impresa más común del país —la lada entre
   paréntesis, con o sin el +52 delante— no produce ni un aviso, mientras la
@@ -128,7 +128,7 @@ Las dos oleadas anteriores quedaron saldadas: la primera en v0.8.0–v0.12.0
 
 ### La regresión de hoy
 
-- [ ] **La frontera camelCase absuelve contraseñas reales
+- [x] **La frontera camelCase absuelve contraseñas reales
   «MiClave…»/«MiSecreto…»** — `src/garita/detectores/secretos.py:173`. La
   frontera minúscula→Mayúscula que v0.13.0 introdujo para los placeholders
   camelCase, combinada con el marcador `mi[_-]?(clave|llave|secreto)`,
@@ -192,7 +192,7 @@ por severidad alegada.)*
 
 ### Calibración
 
-- [ ] **`_POSESIVO_ES_TODO` con lista de sustantivos marca «TuClaveAqui» como
+- [x] **`_POSESIVO_ES_TODO` con lista de sustantivos marca «TuClaveAqui» como
   error** — `secretos.py:143`. La lista cerrada exige que el valor termine
   justo tras el sustantivo, así que los placeholders con sufijo y sin
   separador («TuClaveAqui», «tuPasswordAqui», el estilo de las plantillas) ya
@@ -209,22 +209,23 @@ por severidad alegada.)*
   `detectores: no` (bool). Arreglo: unir la lista, o rechazar con
   `ConfigInvalida`.
 
-- [ ] **El NSS no exenta rellenos: el todo-ceros pasa Luhn y dispara error** —
+- [x] **El NSS no exenta rellenos: el todo-ceros pasa Luhn y dispara error** —
   `mx.py:339`. `nss_valido("0"*11)` es True y `_buscar_nss` no tiene lista de
   exentos, a diferencia de sus tres hermanos del mismo archivo (que incluyen
   un `_clabe_es_relleno` hecho justo para ceros y nueves). La lección de
   v0.16.0 sin aplicar al detector veterano.
 
-- [ ] **`_descitar` ignora los escapes `\a \b \v \f` de git** —
+- [x] **`_descitar` ignora los escapes `\a \b \v \f` de git** —
   `historial.py:145`. El diccionario conoce `\" \\ \t \n \r`, pero el
   C-quoting de git también emite esos cuatro: la ruta queda con backslash
   literal, distinta de la cruda que da `rev-list`, y el blob recupera su ruta
   fantasma — el bug que `_descitar` dice cerrar. Arreglo: cuatro entradas más.
 
-- [ ] **Un punto final de oración apaga el detector de teléfono** —
+- [x] **Un punto final de oración apaga el detector de teléfono** —
   `mx.py:258`. El lookahead `(?![\d.])` protege de decimales pero también
-  rechaza el punto que cierra una frase: «Llama al tel 55 1234 5678.» no
-  produce nada. Arreglo: `(?!\.?\d)`.
+  rechazaba el punto que cierra una frase, y el teléfono en prosa —el de un
+  README o un ticket pegado en un docstring— es justo el que se escribe con
+  punto final. Arreglo: `(?!\.?\d)`.
 
 ### Cosmético
 
@@ -248,5 +249,5 @@ por severidad alegada.)*
 |---------|------|-----------|
 | v0.17.0 ✓ | Lo que el motor no leyó | UTF-16 sin BOM, Latin-1, el CSV de `dentro_de_un_numero`, `spec/`; y los plausibles de `dentro_de_url` que sobrevivan |
 | v0.18.0 ✓ | Las vías de callar | Severidad en la línea base, fnmatch por segmentos, la `T` del diff y las rutas C-quoted de la Action, `detectores:` en lista |
-| v0.19.0 | La regresión y los veteranos | «MiClave…» y «TuClaveAqui» (las dos caras), el teléfono con paréntesis y con punto final, los rellenos del NSS, los escapes de `_descitar` |
+| v0.19.0 ✓ | La regresión y los veteranos | «MiClave…» y «TuClaveAqui» (las dos caras), el teléfono con paréntesis y con punto final, los rellenos del NSS, los escapes de `_descitar` |
 | v0.20.0 | Los documentos no mienten | `recortar()` sin valores completos, el `uri` del SARIF, el truncamiento del HTML, `--config ""` |
