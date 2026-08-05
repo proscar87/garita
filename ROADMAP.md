@@ -138,10 +138,14 @@ ASCII enteras, y pruebas para `fallar_en_aviso` y `--explicar`.)*
   política de refuerzo/contexto, exentos y fuente por país, extraídas de los
   docstrings — y la lista de fuentes creció de 5 a 17 entradas.)*
 
-- [ ] **Más países**, en el orden en que se consigan reglas verificables
+- [x] **Más países**, en el orden en que se consigan reglas verificables
   contra fuente oficial (la doctrina de `AGREGAR_PAIS.md`: un detector
-  aproximado es peor que ninguno). Candidatos naturales: Venezuela, Bolivia,
-  Paraguay, Guatemala, Costa Rica, Panamá.
+  aproximado es peor que ninguno). *(v0.12.0: entraron Venezuela —RIF,
+  reproducido contra los públicos del SENIAT y PDVSA—, Paraguay —RUC, con
+  el algoritmo que la propia SET distribuye— y Guatemala —NIT, la
+  especificación FEL de la SAT—. Bolivia, Costa Rica y Panamá quedaron
+  fuera documentados en IDENTIFICADORES.md: sin fuente verificable no hay
+  detector.)*
 
 ---
 

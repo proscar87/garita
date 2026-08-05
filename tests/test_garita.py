@@ -1941,6 +1941,81 @@ class PaisesCalibrados(unittest.TestCase):
         self.assertTrue(list(d.buscar("NIT 900.123.456-8", "x")))
 
 
+class PaisesNuevos3(unittest.TestCase):
+    """Venezuela, Paraguay y Guatemala (v0.12.0).
+
+    Los tres entraron con algoritmo reproducido contra vectores públicos:
+    el RIF del propio SENIAT y el de PDVSA, los dos RUC de ejemplo de la
+    documentación paraguaya, y el NIT del instructivo FEL. Bolivia, Costa
+    Rica y Panamá quedaron fuera a propósito — sin fuente verificable no
+    hay detector, porque uno aproximado es peor que ninguno.
+    """
+
+    def _det(self, nombre, mod):
+        from garita.config import Config
+        import importlib
+        m = importlib.import_module(f"garita.detectores.paises.{mod}")
+        return {x.nombre: x for x in m.detectores(Config())}[nombre]
+
+    # ── Venezuela ──
+    def test_rif_reproduce_los_publicos(self):
+        from garita.detectores.paises.ve import rif_valido
+        self.assertTrue(rif_valido("G-20000303-0"))   # SENIAT
+        self.assertTrue(rif_valido("J-00123072-6"))   # PDVSA
+        self.assertFalse(rif_valido("G-20000303-1"))
+
+    def test_rif_exige_refuerzo(self):
+        d = self._det("rif", "ve")
+        self.assertTrue(list(d.buscar("RIF: J-12345678-4", "x")))
+        # Pelado y sin palabra que lo nombre, se calla.
+        self.assertFalse(list(d.buscar("id J123456784 en el lote", "x")))
+
+    def test_rif_repetido_es_relleno(self):
+        d = self._det("rif", "ve")
+        self.assertFalse(list(d.buscar("RIF J-00000000-0 de prueba", "x")))
+
+    # ── Paraguay ──
+    def test_ruc_py_reproduce_los_de_la_documentacion(self):
+        from garita.detectores.paises.py import ruc_py_valido
+        self.assertTrue(ruc_py_valido("1946520-3"))
+        self.assertTrue(ruc_py_valido("80009735-1"))
+        self.assertFalse(ruc_py_valido("80009735-2"))
+
+    def test_ruc_py_exige_contexto(self):
+        d = self._det("ruc_py", "py")
+        self.assertTrue(list(d.buscar("RUC 80024242-4 del proveedor", "x")))
+        # Un rango de líneas con la misma forma no es un RUC.
+        self.assertFalse(list(d.buscar("ver lineas 80024242-4", "x")))
+
+    def test_ruc_py_los_ejemplos_oficiales_estan_exentos(self):
+        d = self._det("ruc_py", "py")
+        self.assertFalse(list(d.buscar("RUC 1946520-3 de ejemplo", "x")))
+
+    # ── Guatemala ──
+    def test_nit_gt_reproduce_el_del_instructivo(self):
+        from garita.detectores.paises.gt import nit_gt_valido
+        self.assertTrue(nit_gt_valido("3602978-5"))
+        self.assertFalse(nit_gt_valido("3602978-6"))
+        self.assertTrue(nit_gt_valido("1000002-K"))  # el residuo 10 es K
+
+    def test_nit_gt_exige_contexto(self):
+        d = self._det("nit_gt", "gt")
+        self.assertTrue(list(d.buscar("NIT 5000000-4 del cliente", "x")))
+        self.assertFalse(list(d.buscar("rango 5000000-4 del log", "x")))
+
+    def test_nit_gt_repetidos_exentos(self):
+        from garita.detectores.paises.gt import nit_gt_valido
+        d = self._det("nit_gt", "gt")
+        # El repetido que valide, exento; se busca uno vivo para no fijar
+        # un literal que dependa del algoritmo.
+        for n in range(10):
+            v = str(n) * 7
+            for dv in "0123456789K":
+                if nit_gt_valido(v + dv):
+                    self.assertFalse(
+                        list(d.buscar(f"NIT {v}-{dv}", "x")), v + dv)
+
+
 class DeteccionViva(unittest.TestCase):
     """El paso 4 de la lista de publicación, ahora permanente: bajar falsos
     positivos no sirve de nada si la herramienta se volvió ciega, y las dos
@@ -1970,6 +2045,9 @@ class DeteccionViva(unittest.TestCase):
         "nif_pt": "NIF: 203456785",
         "cedula_ec": "cédula: 1710034065",
         "cedula_do": "cédula 001-1391820-5",
+        "rif": "RIF J-12345678-4",
+        "ruc_py": "RUC 80024242-4",
+        "nit_gt": "NIT 5000000-4",
     }
 
     def test_todos_los_tipos_disparan(self):

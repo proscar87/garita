@@ -103,7 +103,7 @@ archivo presente y roto truena igual que siempre.
 ## ¿Tu país no está?
 
 Los identificadores oficiales viven en `detectores/paises/`, **un archivo por
-país**. Hoy son trece:
+país**. Hoy son dieciséis:
 
 | País | Identificadores | Validación |
 |---|---|---|
@@ -120,6 +120,9 @@ país**. Hoy son trece:
 | 🇺🇾 Uruguay | Cédula de identidad | dígito verificador |
 | 🇪🇨 Ecuador | Cédula de identidad | módulo 10 del Registro Civil + contexto |
 | 🇩🇴 Rep. Dominicana | Cédula (JCE) | Luhn + contexto |
+| 🇻🇪 Venezuela | RIF (contiene la cédula) | módulo 11 |
+| 🇵🇾 Paraguay | RUC (es la cédula + dígito) | módulo 11 de la SET + contexto |
+| 🇬🇹 Guatemala | NIT | módulo 11 de la SAT (FEL) + contexto |
 
 Agregar otro es un archivo, no una rama — comparten motor, exenciones y
 pruebas, así que un arreglo llega a todos el mismo día.

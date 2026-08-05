@@ -1,6 +1,6 @@
 # Los identificadores
 
-Cómo se valida cada identificador de los trece países, de dónde salió cada
+Cómo se valida cada identificador de los dieciséis países, de dónde salió cada
 algoritmo y con qué se comprobó.
 
 Este documento existe porque un detector de datos personales que no puede
@@ -12,7 +12,7 @@ son claves de muestra publicadas por la autoridad en sus propios instructivos,
 o construidos sintéticamente para las pruebas.
 
 La primera parte cubre México — el país de origen, con el detalle completo de
-cada algoritmo. La segunda, los otros doce países, cada uno con su estructura,
+cada algoritmo. La segunda, los otros quince países, cada uno con su estructura,
 su validación y su política de refuerzo. Las dos políticas que se repiten
 vienen de `_comun.py`: un identificador con UN solo carácter de control exige
 **refuerzo** (separadores o la palabra que lo nombre en la línea); uno que
@@ -317,6 +317,31 @@ tres-dos-cuatro con guiones también es un número de parte. Exentos los dos
 SSN más publicados de la historia — `078-05-1120` (la cartera de Woolworth,
 1938) y `219-09-9999` (el anuncio de la SSA) — más los rellenos de siempre.
 
+## Guatemala — NIT
+
+Base de hasta 8 dígitos + control: pesos descendentes desde la izquierda
+(n+1 … 2), módulo 11, y el residuo 10 se escribe **K**. Es el algoritmo que
+la SAT documenta para la factura electrónica (FEL); el vector de todo
+instructivo (`3602978-5`) reproduce. Contexto **siempre**: la forma también
+es un rango o un folio. Y «sat» no cuenta como contexto — en un repositorio
+es sábado o el SAT mexicano; `nit`, `fel`, `factura` sí.
+
+El CUI del DPI queda fuera **a propósito**: el RENAP no publica el algoritmo
+de su verificador y la regla de la casa exige fuente.
+
+## Paraguay — RUC
+
+El RUC de una persona física ES su cédula más el dígito verificador
+(`1946520-3`); el de una jurídica arranca en 80 (`80009735-1`). El algoritmo
+lo distribuye la propia SET (hoy DNIT) como código fuente: pesos 2, 3, 4…
+de derecha a izquierda, módulo 11; residuo 0 o 1 → verificador 0. Los dos
+ejemplos de la documentación oficial reproducen y están exentos.
+
+Contexto **siempre** («dígitos-guion-dígito» también es un rango de páginas)
+y la sigla vieja de la autoridad no cuenta: «set» es palabra común del
+inglés — la lección de «SIN» y de «ci». La cédula pelona, sin verificador a
+la vista, no tiene detector propio: el RUC la cubre.
+
 ## Perú — RUC
 
 El DNI peruano queda fuera **a propósito**: RENIEC confirma que el carácter
@@ -352,6 +377,34 @@ integración continua y una fecha `AAAAMMDD` pasa el módulo una de cada diez
 veces; «c.i.» con puntos sí, porque así la abrevian los documentos. Exentos
 `1.234.567-2` (el ejemplo de los instructivos) y los repetidos que validan.
 
+## Venezuela — RIF
+
+Letra + 8 dígitos + verificador. La letra vale V=1, E=2, J=3, P=4, G=5 y se
+multiplica por 4; los dígitos, por `3-2-7-6-5-4-3-2`; módulo 11, y si 11
+menos el residuo pasa de 9, el verificador es 0. El SENIAT no publica la
+fórmula — la misma situación que el CURP — así que se usa el estándar de la
+industria comprobado contra RIF públicos de entidades: el del propio SENIAT
+(`G-20000303-0`) y el de PDVSA (`J-00123072-6`) reproducen.
+
+**El RIF de V o E contiene la cédula** de la persona en sus ocho dígitos —
+el mismo atajo que el CUIT argentino y el RUC peruano, porque la cédula
+venezolana no tiene verificador propio. Refuerzo; los repetidos que validan
+(`J-00000000-0`) están exentos.
+
+## Los que quedan fuera, y por qué
+
+- **Bolivia**: el NIT no tiene un algoritmo de verificación publicado de
+  forma verificable; la cédula no trae verificador.
+- **Costa Rica**: ni la cédula física ni la jurídica llevan dígito
+  verificador — no hay nada que validar, solo forma, y la forma sola es
+  ruido.
+- **Panamá**: la cédula no trae verificador; el RUC sí, pero el algoritmo de
+  la DGI es una rutina heredada sin especificación publicada que se pueda
+  reproducir contra vectores oficiales.
+
+Los tres seguirán fuera hasta que exista fuente verificable: un detector
+aproximado es peor que ninguno.
+
 ---
 
 ## Fuentes
@@ -383,6 +436,13 @@ veces; «c.i.» con puntos sí, porque así la abrevian los documentos. Exentos
 - NIF y su módulo 11 — Autoridade Tributária e Aduaneira (Portugal).
 - Cédula de identidad y electoral (Luhn) — JCE (República Dominicana).
 - Cédula de identidad y su verificador — DNIC (Uruguay).
+- Dígito verificador del NIT — SAT, especificación de la factura
+  electrónica FEL (Guatemala).
+- Dígito verificador del RUC — código fuente distribuido por la SET/DNIT
+  (Paraguay); reproducido contra los ejemplos de su documentación.
+- RIF — estándar de la industria (el SENIAT no publica la fórmula),
+  comprobado reproduciendo los RIF públicos del SENIAT y de PDVSA
+  (Venezuela).
 
 Cada algoritmo se comprobó **reproduciendo** el dígito de los identificadores
 de muestra listados arriba. El del CURP merece una nota: el instructivo
