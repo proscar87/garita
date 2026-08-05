@@ -27,6 +27,7 @@ import subprocess
 import tempfile
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -1378,8 +1379,11 @@ class ElCliNoSorprende(unittest.TestCase):
             cfg = cargar_config(raiz)
             res = revisar(raiz, construir(cfg, raiz), cfg.exenciones)
         con, sin = TTY(), TTY()
-        imprimir(res, salida=con)
-        imprimir(res, salida=sin, sin_color=True)
+        # En Actions GITHUB_ACTIONS=true apaga el color por otra vía; hay
+        # que despejarla para que la prueba mida solo la bandera.
+        with unittest.mock.patch.dict(os.environ, {"GITHUB_ACTIONS": ""}):
+            imprimir(res, salida=con)
+            imprimir(res, salida=sin, sin_color=True)
         self.assertIn("\x1b[", con.getvalue())
         self.assertNotIn("\x1b[", sin.getvalue())
 

@@ -8,15 +8,19 @@
 exenciones:
   - archivo: docs/IDENTIFICADORES.md
     motivo: documenta los algoritmos citando las claves de muestra oficiales de RENAPO, el SAT y el IMSS; ninguna pertenece a una persona
-    detectores: curp, rfc, clabe, nss, telefono
+    detectores: curp, rfc, clabe, nss, telefono, rif
 
   - archivo: src/garita/detectores/paises/mx.py
     motivo: contiene las listas blancas de claves de muestra y genéricos oficiales
     detectores: curp, rfc
 
+  - archivo: src/garita/detectores/paises/ve.py
+    motivo: contiene los RIF genéricos de la papelería oficial del SENIAT y PDVSA usados como vectores de calibración
+    detectores: rif
+
   - archivo: tests/test_garita.py
     motivo: los vectores de prueba son sintéticos o genéricos oficiales; sin ellos no se puede verificar la herramienta
-    detectores: curp, rfc, clabe, nss, telefono, cpf, cnpj, cuit, rut, nit, dni_es, nie, cif, iban_es, ruc, ssn, sin_ca, nif_pt, ci_uy, cedula_ec, cedula_do, secretos, asignacion_sospechosa
+    detectores: curp, rfc, clabe, nss, telefono, cpf, cnpj, cuit, rut, nit, dni_es, nie, cif, iban_es, ruc, ssn, sin_ca, nif_pt, ci_uy, cedula_ec, cedula_do, rif, ruc_py, nit_gt, secretos, asignacion_sospechosa
 
   - archivo: README.md
     motivo: los ejemplos de configuración muestran formatos, no valores reales

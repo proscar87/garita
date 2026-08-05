@@ -1,151 +1,171 @@
 # Hoja de ruta
 
-Este documento sale de una auditoría de agentes sobre el propio código
-(agosto 2026): cada hallazgo de la primera sección fue **reproducido de punta
-a punta** por un verificador adversarial independiente antes de entrar aquí.
-Los de la segunda sección son plausibles pero nadie los ha reproducido
-todavía: verificar antes de arreglar. El orden dentro de cada sección es el
-orden sugerido de trabajo.
+Este documento sale de la segunda oleada de agentes sobre el propio código
+(2026-08-05), enfocada en lo que se escribió durante los cinco releases del
+día anterior (v0.8.0–v0.12.0). Cada hallazgo de la primera sección fue
+**reproducido de punta a punta** por un verificador adversarial independiente
+antes de entrar aquí — de diez verificados, diez sobrevivieron, cero
+refutados. Los de la segunda sección quedaron fuera del cupo de verificación:
+son plausibles y traen receta, pero nadie los ha reproducido con adversario;
+verificar antes de arreglar.
 
-La regla para priorizar es la del proyecto: *un guardián que aprueba todo es
-peor que ninguno*. Primero va todo lo que hace que Garita apruebe en silencio
-algo que no revisó (falsos negativos estructurales), después la calibración,
-al final lo cosmético.
+La regla para priorizar es la de siempre: *un guardián que aprueba todo es
+peor que ninguno*. Primero los falsos negativos silenciosos, después los
+veredictos que mienten, después la calibración.
+
+Dos hallazgos de la oleada ya quedaron saldados el mismo día (fuera de este
+documento): la autorevisión rota tras v0.12.0 (`.garita.yml` sin exentar
+`rif`/`ruc_py`/`nit_gt`) y la prueba de color que fallaba solo en CI porque
+no aislaba `GITHUB_ACTIONS`.
 
 ---
 
 ## 1. Confirmado y reproducido
 
-### El veredicto no debe mentir
+### Los silencios de los marcadores (secretos.py)
 
-- [x] **Archivos inexistentes se omiten en silencio y Garita aprueba con
-  exit 0** — `src/garita/nucleo.py:281`, `src/garita/cli.py:192`. Un nombre
-  mal tecleado en la config del hook, o correr `garita archivo.py` desde un
-  subdirectorio, produce «✓ nada que reportar … 1 omitidos (binarios o muy
-  grandes)» y sale con 0. Peor: una ruta absoluta sí se revisa pero escapa a
-  exenciones y línea base. Arreglo: normalizar `args.archivos` contra la raíz
-  del repo; ruta inexistente o fuera del repo → exit 2 con mensaje claro.
+- [ ] **`gh[opsur]_{36}` exacto pierde los refresh tokens `ghr_` de GitHub**
+  — `src/garita/detectores/secretos.py:76`. Las variantes `ghp_/gho_/ghs_/ghu_`
+  miden 36 tras el prefijo, pero los `ghr_` vigentes miden 76: con longitud
+  exacta seguida de `\b` no casan jamás y el CLI aprueba con 0 un refresh
+  token real. Arreglo verificado: `{36,}` en vez de `{36}` — el `\b` de
+  cierre hace que el de 76 case entero y los de 36 sigan igual. Prueba con un
+  `ghr_` sintético de 76.
 
-- [x] **En clones shallow, `--historial` declara limpio un historial que no
-  pudo ver** — `src/garita/historial.py:106`. Con `--depth 1` (el default de
-  `actions/checkout`, el entorno más probable de la auditoría) `rev-list`
-  solo ve el corte: un secreto borrado hace meses es invisible y Garita sale
-  con 0. Arreglo: `git rev-parse --is-shallow-repository` antes de auditar;
-  si es shallow → exit 2 pidiendo `fetch-depth: 0` / `--unshallow`.
+- [ ] **`_POSESIVO_ES_TODO` absuelve cualquier valor que empiece por
+  tu/your** — `src/garita/detectores/secretos.py:137`. El `[_-]?` es opcional
+  y el `\w+` traga el resto: «Turquesa9Fuerte42x» es marcador, y una URL de
+  conexión con contraseña que arranque en «Tu» sale limpia con 0 (control: la
+  misma URL con otra contraseña sí dispara `credencial_en_url`). Arreglo:
+  acotar el `\w+` a sustantivos de marcador (clave, llave, secreto, password,
+  secret, key, token…); los casos con separador ya los cubre MARCADORES.
 
-- [x] **Una sola ruta por blob: una copia en `fixtures/` absuelve al secreto
-  en `src/`** — `src/garita/historial.py:111`. `blobs.setdefault(sha, ruta)`
-  conserva la primera ruta que `rev-list` entrega (orden alfabético), y esa
-  ruta única decide relajación y exenciones. Una llave privada en
-  `src/secreto.pem` copiada a `fixtures/ejemplo.pem` deja de reportarse.
-  Arreglo: guardar todas las rutas por blob; omitir solo si **todas** lo
-  omiten, reportar con la más severa. *(Nota del arreglo: `rev-list
-  --objects` deduplica por objeto y las rutas extra ni aparecen; hubo que
-  juntarlas de `git log --raw`.)*
+- [ ] **Los dígitos cuentan como frontera: un marcador entre dígitos absuelve
+  llaves con formato de proveedor** — `src/garita/detectores/secretos.py:149`.
+  `_marcador_delimitado` solo exige no-letra (`isalpha`), así que «fake» o
+  «EXAMPLE» rodeados de dígitos dentro de una llave que sí casa
+  `llave_proveedor` la absuelven en silencio. (Matiz honesto: v0.7.0 tenía el
+  mismo boquete por otra vía; no es regresión, pero el mecanismo nuevo lo
+  reimplementó.) Arreglo: conceder la frontera-dígito solo cuando el otro
+  extremo del marcador toca el borde del valor — así la canónica
+  `AKIA…7EXAMPLE` sigue exenta y el marcador interior deja de absolver.
 
-- [x] **`examples/` relaja `llave_proveedor` y `credencial_en_url`, el
-  escenario que el propio código declara como la fuga típica** —
-  `src/garita/nucleo.py:80,90`. Una llave AKIA real en `examples/config.yml`
-  se suprime sin dejar rastro, contradiciendo el comentario («sólo se relaja
-  lo criptográfico») y el docstring de `secretos.py` («la mitad de las fugas
-  reales son el archivo de ejemplo con valores verdaderos»). Arreglo: reducir
-  el frozenset a lo criptográfico de fixtures y sacar `examples?|ejemplos?`
-  de la relajación de credenciales — o degradar a aviso en vez de suprimir.
-
-### Calibración de secretos
-
-- [x] **`MARCADORES` descarta secretos reales que contengan «tu» como
-  subcadena** — `src/garita/detectores/secretos.py:112,144`. El `.search`
-  sin anclar hace que «VirtualPass2024» (contiene «tu» en «Virtual»), o
-  cualquier token largo cuya base64 incluya «tu»/«ejemplo»/«fake», se
-  descarte en silencio como placeholder. *(Arreglo final: un marcador cuenta
-  si no está incrustado entre letras — así «7EXAMPLE» de la llave de AWS
-  sigue contando — y «tu…»/«your…» sólo absuelve siendo el valor completo.)*
-
-- [x] **Los formatos vigentes de OpenAI y Stripe no casan con
-  `llave_proveedor`** — `src/garita/detectores/secretos.py:67`.
-  `sk-[A-Za-z0-9]{20,}` no admite guiones ni guiones bajos: `sk-proj-…`,
-  `sk-svcacct-…`, `sk_live_…`, `rk_live_…` pasan limpios (el formato legado
-  sí se detecta). *(Arreglo final: prefijos explícitos `sk-proj-/svcacct-/
-  admin-`, `[sr]k_live_`, `gh[opsur]_` y `npm_`; el `sk-` pelón se queda
-  alfanumérico puro a propósito — admitirle guiones casaría clases CSS de
-  esqueleto.)*
-
-- [x] **`credencial_en_url` exige usuario no vacío: `redis://:pass@host`
-  pasa limpio** — `src/garita/detectores/secretos.py:87`. Verificado y
-  reproducido al arrancar v0.9.0 (venía de la sección 2). Es la forma normal
-  de redis y memcached.
-
-- [x] **`buscar_asignaciones` corta en la primera credencial de la línea**
-  — `src/garita/detectores/secretos.py:248`. Verificado y reproducido al
-  arrancar v0.9.0 (venía de la sección 2): si la primera era un marcador, el
-  `continue` se tragaba la línea entera. Ahora `finditer`, la misma lección
-  que `buscar` ya documentaba.
+- [ ] **Regresión v0.9.0: los placeholders camelCase ya no se absuelven** —
+  `src/garita/detectores/secretos.py:150`. «DummyPassword1234»,
+  «FakeApiKey12345678» eran marcador en v0.7.0 y ahora emiten un aviso cada
+  uno: la frontera no reconoce la transición minúscula→Mayúscula, el estilo
+  de placeholder de media documentación JS/Java. Arreglo verificado: tratar
+  `islower()→isupper()` como frontera por ambos lados — Dummy/Fake/Example
+  vuelven a absolverse, `AKIA…7EXAMPLE` y «VirtualPass2024» no cambian.
 
 ### Detectores de país
 
-- [x] **UY: «ci» como palabra de contexto choca con la integración
-  continua** — `src/garita/detectores/paises/uy.py:22`. «CI corrio el
-  20250801» produce un ERROR: la fecha pasa el módulo 10 y el contexto
-  insensible a mayúsculas la refuerza. Es la misma lección que `ca.py` ya
-  documenta con «SIN». Arreglo: quitar «ci» pelona; aceptar solo
-  `c\.i\.` con puntos.
+- [ ] **RIF con prefijo C (consejos comunales) es invisible** —
+  `src/garita/detectores/paises/ve.py:26`. La clase del regex y `_LETRAS`
+  omiten la C, que el SENIAT emite desde 2015 (más de 45 000 comunas migradas
+  de J a C) y que vale 3 en el algoritmo, igual que J. Un RIF C válido con
+  contexto y separadores ni siquiera casa: aprobación silenciosa. Arreglo:
+  añadir C al regex, a `_LETRAS` (=3), al `fullmatch` y a los repetidos
+  exentos; documentar en el docstring e IDENTIFICADORES.md.
 
-- [x] **ES: la regex del CIF rechaza «B-12345678», la forma más común por
-  escrito** — `src/garita/detectores/paises/es.py:26`. DNI y NIE aceptan
-  separadores; el CIF no, así que la rama de separadores de
-  `exige_refuerzo` queda muerta y la forma habitual nunca casa. Arreglo:
-  replicar el patrón de separadores del NIE.
+### El canal de Actions y los veredictos
 
-### La Action
+- [ ] **El reporte humano imprime la ruta sin escapar: inyección de comandos
+  de workflow** — `src/garita/reporte.py:109`. v0.10.0 blindó las
+  anotaciones pero `imprimir()` vuelca `h.archivo` crudo en columna 0 del
+  mismo stdout que GitHub parsea: un archivo llamado `::stop-commands::x`
+  silencia todas las anotaciones que siguen, y la vía sirve para forjar
+  `::error` apuntando a archivos que Garita nunca marcó. También sin escapar:
+  líneas 67, 78, 171, 190 y las de `imprimir_historial`. Arreglo: un
+  `_ruta()` que neutralice `::` bajo `_en_github()`, aplicado a toda ruta de
+  origen externo del reporte humano; prueba con el archivo `::stop-commands::x`.
 
-- [x] **La salida `hallazgos` de `action.yml` está documentada pero nunca se
-  escribe** — `action.yml:20`, `scripts/ejecutar.py`. Nada escribe a
-  `$GITHUB_OUTPUT`; todo workflow que la use recibe cadena vacía. Arreglo:
-  escribir `hallazgos=N` desde `ejecutar.py` y cubrirlo con una prueba —
-  o eliminar la salida del `action.yml` y del README.
+- [ ] **`_salida_de_action` y `GITHUB_STEP_SUMMARY` abren sin proteger:
+  traceback y código 1 en repo limpio** — `src/garita/cli.py:314` y `:277`.
+  `_escribir_documento` se creó justo para esto y los dos `open()` hermanos
+  quedaron desnudos: con `GITHUB_OUTPUT` o `GITHUB_STEP_SUMMARY` apuntando a
+  ruta no escribible, Garita truena DESPUÉS de revisar y sale 1 —el código de
+  «hay hallazgos»— sobre un repo limpio. Golpea igual a `--historial` (l.369).
+  Arreglo: helper `_anexar()` espejo de `_escribir_documento`, y código 2
+  cuando falle (es entorno, no hallazgo).
+
+- [ ] **`--explicar` se traga `--linea-base`, `--historial` y la lista de
+  archivos en silencio** — `src/garita/cli.py:118`. `garita --linea-base
+  --explicar` sale 0 sin congelar nada; `--explicar --historial` sale 0 sin
+  auditar; `--explicar archivo-con-secreto` sale 0 donde la revisión da 1.
+  La misma «orden aceptada y no cumplida» que la guardia de v0.10.0 dice
+  cerrar, y que `_historial` sí rechaza con 2. Arreglo: guardia explícita
+  junto a la de l.118 (argparse no alcanza: `archivos` es posicional).
+
+### Historial
+
+- [ ] **`_ALCANCE` omite HEAD: commits en detached HEAD se aprueban sin
+  revisar** — `src/garita/historial.py:96`. `--branches --tags --remotes` no
+  cubre un commit alcanzable solo desde HEAD suelto (detach, bisect, rebase
+  interrumpido): sus blobs jamás se piden y «el historial está limpio» sale
+  con 0 — el mismo agujero que la guardia de shallow cierra para clones
+  someros. Arreglo verificado por monkeypatch: un `_alcance(raiz)` que añada
+  `HEAD` solo si `rev-parse --verify HEAD^{commit}` resuelve (en repo sin
+  commits, HEAD pelón hace fallar a git), usado en los cuatro sitios.
 
 ---
 
 ## 2. Plausible, sin verificar aún
 
-*(Vacía desde v0.10.0: los quince se verificaron uno por uno — cada uno se
-reprodujo antes de tocarse — y los quince resultaron reales. Los dos de
-secretos entraron en v0.9.0; país, CLI, reportes, historial y la deuda de
-pruebas, en v0.10.0: ITIN detectable, NIT de base 8, NIE con refuerzo,
-`redis://:pass@host`, asignaciones con `finditer`, `--salida` con código 2,
-`--linea-base`/`--explicar` rechazan banderas que ignorarían, anotaciones
-escapadas, `--sin-color` operativo, `--remotes` en la auditoría, rutas no
-ASCII enteras, y pruebas para `fallar_en_aviso` y `--explicar`.)*
+*(Quedaron fuera del cupo de verificación adversarial de la oleada; cada uno
+trae receta del buscador, pero nadie lo ha reproducido con adversario.)*
 
----
+### Calibración de exentos en los países nuevos
 
-## 3. Estratégico
+- [ ] **`EXENTOS_RIF` no incluye los RIF oficiales que el propio módulo
+  cita** — `ve.py:58`. G-20000303-0 (SENIAT) y J-00123072-6 (PDVSA) están en
+  el docstring como vectores y no están exentos: citar la documentación del
+  SENIAT produce un error. `py.py` sí exenta sus ejemplos; la asimetría
+  delata la omisión.
 
-- [x] **Catálogo ABM para la CLABE** — la única promesa explícita de las
-  docs (`docs/IDENTIFICADORES.md:152`): validar los tres primeros dígitos
-  contra el catálogo de bancos corta casi todo lo que el dígito verificador
-  deja pasar. *(Resultó que el catálogo YA estaba incrustado y cableado —
-  la doc decía «pendiente» por rancia — pero le faltaban 27 códigos
-  vigentes, casi todos IFPEs: Mercado Pago 722, Cuenca 723, Spin 728,
-  NVIO 710… Las CLABEs más probables de un volcado moderno pasaban
-  limpias. Cotejado contra Banxico en agosto 2026; los históricos se
-  conservan porque una CLABE vieja sigue siendo la cuenta de alguien.)*
+- [ ] **`EXENTOS_NIT` no incluye el vector 3602978-5 de la SAT** — `gt.py:54`.
+  El docstring lo llama «el vector de toda la documentación» y el código no
+  lo exenta.
 
-- [x] **`docs/IDENTIFICADORES.md` cubre solo México** aunque el README lo
-  enlaza como la referencia de los 13 países y `AGREGAR_PAIS.md` exige una
-  sección por país. *(Se agregaron las 12 secciones — estructura, algoritmo,
-  política de refuerzo/contexto, exentos y fuente por país, extraídas de los
-  docstrings — y la lista de fuentes creció de 5 a 17 entradas.)*
+- [ ] **`EXENTOS_RUC` no cubre el relleno todo-ceros, que valida** —
+  `py.py:34`. `00000-0` a `00000000-0` pasan el módulo 11 y no hay
+  `_repetidos_validos()` como en ve.py y gt.py.
 
-- [x] **Más países**, en el orden en que se consigan reglas verificables
-  contra fuente oficial (la doctrina de `AGREGAR_PAIS.md`: un detector
-  aproximado es peor que ninguno). *(v0.12.0: entraron Venezuela —RIF,
-  reproducido contra los públicos del SENIAT y PDVSA—, Paraguay —RUC, con
-  el algoritmo que la propia SET distribuye— y Guatemala —NIT, la
-  especificación FEL de la SAT—. Bolivia, Costa Rica y Panamá quedaron
-  fuera documentados en IDENTIFICADORES.md: sin fuente verificable no hay
-  detector.)*
+### Calibración de países tocados
+
+- [ ] **CIF: el espacio cuenta como refuerzo y dispara sin contexto** —
+  `es.py:29`. Al admitir `\s` en el regex, el mismo espacio que permite el
+  match satisface el refuerzo: «modelo A 1234567 4» es error sin palabra de
+  contexto (~6.5 % de combinaciones al azar validan).
+
+- [ ] **NIT con base de 8 dígitos: folios de 9 dígitos junto a
+  «factura»/«cc» disparan** — `co.py:25`. ~10 % de tiras de 9 dígitos pasan
+  el dígito DIAN, y «cc» casa el «Cc:» de correos.
+
+- [ ] **El NIT de 8 dígitos caza RUTs chilenos** — `co.py:25`. La base de 8
+  es la forma normal del RUT; ~9 % de RUTs válidos coinciden también en el DV
+  colombiano y salen duplicados con país equivocado.
+
+### CLI e historial
+
+- [ ] **Un symlink rastreado tumba el modo pre-commit con código 2** —
+  `cli.py:216`. `resolve()` sigue el enlace: apuntando fuera del repo da
+  «queda fuera del repositorio», roto da «no existe» (falso); el repo
+  completo, en cambio, pasa con 0.
+
+- [ ] **Rutas C-quoted de `git log --raw` no se des-quotan** —
+  `historial.py:150`. `core.quotepath=false` no evita la cita de comillas,
+  backslash, tab: el blob queda con una ruta real y una fantasma citada, que
+  anula la relajación de pruebas, rompe exenciones y mutila el SARIF.
+
+- [ ] **`--salida` con cadena vacía burla las dos guardias** — `cli.py:258`.
+  `if args.salida` es falso para `""` (el `$RUTA` sin definir de CI): no se
+  rechaza, no se escribe archivo, el SARIF sale por stdout.
+
+- [ ] **Secreto introducido en un commit de merge se reporta con commit «?» y
+  fecha «?»** — `historial.py:204`. `git log --raw` sin `--diff-merges` no
+  emite raw para merges: el hallazgo sí sale, pero sin el dato que quien
+  limpia necesita, y «?» ordena mal en el sort.
 
 ---
 
@@ -153,7 +173,7 @@ ASCII enteras, y pruebas para `fallar_en_aviso` y `--explicar`.)*
 
 | Versión | Tema | Contenido |
 |---------|------|-----------|
-| v0.8.0 ✓ | El veredicto no miente | Los cuatro de «el veredicto no debe mentir» + la salida de la Action |
-| v0.9.0 ✓ | Calibración de secretos | MARCADORES anclado, formatos vigentes de proveedor, y los plausibles de secretos que sobrevivan verificación |
-| v0.10.0 ✓ | Países al día + el CLI no sorprende | UY, ES, y los plausibles de país que sobrevivan; catálogo ABM |
-| continuo | Deuda de pruebas | `fallar_en_aviso`, `--explicar`, `--sin-color`, salida de la Action |
+| v0.13.0 | Los silencios de los marcadores | Los cuatro de secretos.py + el RIF C |
+| v0.14.0 | El canal de Actions y los veredictos | Inyección de rutas, los `open()` desnudos, `--explicar` mandón; los plausibles de CLI que sobrevivan |
+| v0.15.0 | Historial completo | HEAD en el alcance; los plausibles de historial que sobrevivan |
+| continuo | Calibración | Exentos oficiales de VE/GT/PY y los plausibles de país que sobrevivan |
