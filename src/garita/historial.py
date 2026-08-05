@@ -95,6 +95,14 @@ class ResultadoHistorial:
 # declara limpio un historial que no revisó.
 _ALCANCE = ("--branches", "--tags", "--remotes")
 
+# `git log --raw` calla en los commits de merge: un secreto nacido en la
+# resolución de un conflicto (el «arreglo rápido» hecho al mergear) no
+# aparecía en ninguna pasada y su origen caía al «?» — justo el dato que
+# quien limpia necesita. Contra el primer padre, que es la historia que
+# la rama cuenta; el commit original de una rama lateral es más viejo y
+# gana igual en la sobreescritura.
+_CON_MERGES = ("--diff-merges=first-parent",)
+
 
 def _git(raiz: Path, *args: str) -> bytes:
     # core.quotepath=false: sin esto, git entrega «peña.pem» como
@@ -104,6 +112,54 @@ def _git(raiz: Path, *args: str) -> bytes:
         ["git", "-c", "core.quotepath=false", *args],
         cwd=raiz, capture_output=True, check=True,
     ).stdout
+
+
+def _alcance(raiz: Path) -> tuple[str, ...]:
+    """El alcance real de la auditoría: ramas, tags, remotos… y HEAD.
+
+    HEAD no es redundante: un commit hecho con la HEAD suelta (checkout
+    --detach, bisect, un rebase interrumpido) no es alcanzable desde
+    ninguna ref, y sin él la auditoría aprobaba con 0 un historial que no
+    revisó — el mismo agujero que la guardia de shallow cierra para los
+    clones someros. Se añade sólo si resuelve: en un repo sin commits,
+    HEAD pelón hace fallar a git."""
+    try:
+        _git(raiz, "rev-parse", "--verify", "-q", "HEAD^{commit}")
+    except subprocess.CalledProcessError:
+        return _ALCANCE
+    return _ALCANCE + ("HEAD",)
+
+
+def _descitar(ruta: str) -> str:
+    """Des-cita una ruta C-quoted de `git log --raw`.
+
+    `core.quotepath=false` sólo salva los bytes no ASCII: git SIEMPRE
+    C-quota rutas con comillas, backslash o caracteres de control. Como
+    `rev-list --objects` entrega la misma ruta cruda, el blob quedaba con
+    una ruta real y una fantasma citada — que anulaba la relajación de
+    pruebas, rompía exenciones y mutilaba el reporte y el SARIF."""
+    if len(ruta) < 2 or ruta[0] != '"' or ruta[-1] != '"':
+        return ruta
+    cuerpo = ruta[1:-1]
+    crudo = bytearray()
+    simples = {'"': b'"', "\\": b"\\", "t": b"\t", "n": b"\n", "r": b"\r"}
+    i = 0
+    while i < len(cuerpo):
+        c = cuerpo[i]
+        if c == "\\" and i + 1 < len(cuerpo):
+            s = cuerpo[i + 1]
+            if s in simples:
+                crudo += simples[s]
+                i += 2
+                continue
+            octal = cuerpo[i + 1:i + 4]
+            if len(octal) == 3 and all(ch in "01234567" for ch in octal):
+                crudo.append(int(octal, 8))
+                i += 4
+                continue
+        crudo += c.encode("utf-8")
+        i += 1
+    return crudo.decode("utf-8", "replace")
 
 
 def es_somero(raiz: Path) -> bool:
@@ -129,14 +185,15 @@ def _blobs_del_historial(raiz: Path) -> dict[str, list[str]]:
     cambio como cualquiera. Los commits y árboles se filtran después con
     `cat-file --batch-check`, que además trae el tamaño.
     """
-    crudo = _git(raiz, "rev-list", "--objects", *_ALCANCE)
+    alcance = _alcance(raiz)
+    crudo = _git(raiz, "rev-list", "--objects", *alcance)
     blobs: dict[str, list[str]] = {}
     for linea in crudo.decode("utf-8", "replace").splitlines():
         sha, _, ruta = linea.partition(" ")
         if ruta:  # los commits vienen sin ruta; los árboles se filtran luego
             blobs.setdefault(sha, [ruta])
 
-    crudo = _git(raiz, "log", *_ALCANCE, "--raw", "--no-abbrev",
+    crudo = _git(raiz, "log", *alcance, *_CON_MERGES, "--raw", "--no-abbrev",
                  "--format=")
     for linea in crudo.decode("utf-8", "replace").splitlines():
         if not linea.startswith(":"):
@@ -146,8 +203,9 @@ def _blobs_del_historial(raiz: Path) -> dict[str, list[str]]:
         campos = partes[0].split()
         if len(campos) >= 5 and campos[3] in blobs:
             rutas = blobs[campos[3]]
-            if partes[-1] not in rutas:
-                rutas.append(partes[-1])
+            ruta = _descitar(partes[-1])
+            if ruta not in rutas:
+                rutas.append(ruta)
     return blobs
 
 
@@ -201,7 +259,7 @@ def _origen_de(raiz: Path, sucios: set[str]) -> dict[str, tuple[str, str, str]]:
     if not sucios:
         return {}
     crudo = _git(
-        raiz, "log", *_ALCANCE, "--raw", "--no-abbrev",
+        raiz, "log", *_alcance(raiz), *_CON_MERGES, "--raw", "--no-abbrev",
         "--date=short", "--format=%x01%h %ad",
     )
     origen: dict[str, tuple[str, str, str]] = {}
@@ -217,7 +275,7 @@ def _origen_de(raiz: Path, sucios: set[str]) -> dict[str, tuple[str, str, str]]:
             partes = linea.split("\t")
             campos = partes[0].split()
             if len(campos) >= 5 and campos[3] in sucios:
-                origen[campos[3]] = (commit, fecha, partes[-1])
+                origen[campos[3]] = (commit, fecha, _descitar(partes[-1]))
     return origen
 
 
@@ -247,7 +305,7 @@ def revisar_historial(
     if not blobs:
         return res
     res.commits = int(
-        _git(raiz, "rev-list", *_ALCANCE, "--count") or b"0")
+        _git(raiz, "rev-list", *_alcance(raiz), "--count") or b"0")
 
     tamanos = _tamanos(raiz, list(blobs))
 

@@ -99,7 +99,7 @@ no aislaba `GITHUB_ACTIONS`.
 
 ### Historial
 
-- [ ] **`_ALCANCE` omite HEAD: commits en detached HEAD se aprueban sin
+- [x] **`_ALCANCE` omite HEAD: commits en detached HEAD se aprueban sin
   revisar** — `src/garita/historial.py:96`. `--branches --tags --remotes` no
   cubre un commit alcanzable solo desde HEAD suelto (detach, bisect, rebase
   interrumpido): sus blobs jamás se piden y «el historial está limpio» sale
@@ -155,10 +155,12 @@ trae receta del buscador, pero nadie lo ha reproducido con adversario.)*
   ahora se resuelve el directorio pero nunca el componente final, y el
   enlace se revisa —u omite diciéndolo— igual que en el modo completo.)*
 
-- [ ] **Rutas C-quoted de `git log --raw` no se des-quotan** —
+- [x] **Rutas C-quoted de `git log --raw` no se des-quotan** —
   `historial.py:150`. `core.quotepath=false` no evita la cita de comillas,
   backslash, tab: el blob queda con una ruta real y una fantasma citada, que
   anula la relajación de pruebas, rompe exenciones y mutila el SARIF.
+  *(Verificado y reproducido en v0.15.0: `_descitar()` en las dos pasadas
+  de `log --raw`.)*
 
 - [x] **`--salida` con cadena vacía burla las dos guardias** — `cli.py:258`.
   `if args.salida` es falso para `""` (el `$RUTA` sin definir de CI): no se
@@ -166,10 +168,12 @@ trae receta del buscador, pero nadie lo ha reproducido con adversario.)*
   reproducido en v0.14.0: guardia explícita con código 2 antes que todas
   las demás.)*
 
-- [ ] **Secreto introducido en un commit de merge se reporta con commit «?» y
+- [x] **Secreto introducido en un commit de merge se reporta con commit «?» y
   fecha «?»** — `historial.py:204`. `git log --raw` sin `--diff-merges` no
   emite raw para merges: el hallazgo sí sale, pero sin el dato que quien
-  limpia necesita, y «?» ordena mal en el sort.
+  limpia necesita, y «?» ordena mal en el sort. *(Verificado y reproducido
+  en v0.15.0: `--diff-merges=first-parent` en ambas pasadas; el commit
+  original de una rama lateral es más viejo y gana igual.)*
 
 ---
 
@@ -179,5 +183,5 @@ trae receta del buscador, pero nadie lo ha reproducido con adversario.)*
 |---------|------|-----------|
 | v0.13.0 ✓ | Los silencios de los marcadores | Los cuatro de secretos.py + el RIF C |
 | v0.14.0 ✓ | El canal de Actions y los veredictos | Inyección de rutas, los `open()` desnudos, `--explicar` mandón; los dos plausibles de CLI sobrevivieron y entraron |
-| v0.15.0 | Historial completo | HEAD en el alcance; los plausibles de historial que sobrevivan |
+| v0.15.0 ✓ | Historial completo | HEAD en el alcance; los dos plausibles de historial sobrevivieron y entraron |
 | continuo | Calibración | Exentos oficiales de VE/GT/PY y los plausibles de país que sobrevivan |

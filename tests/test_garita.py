@@ -1483,6 +1483,8 @@ class ElCanalDeActions(unittest.TestCase):
 
     REPO = {"app.py": 'url = "postgres://app:Kx9mPqR2vNw8@db/prod"\n'}
 
+    @unittest.skipIf(os.name == "nt",
+                     "«:» es ilegal en nombres de archivo de Windows")
     def test_ruta_con_prefijo_de_comando_no_inyecta(self):
         # Un archivo llamado «::stop-commands::x» apagaba las anotaciones
         # que siguieran; la vía también forjaba ::error ajenos.
@@ -1499,6 +1501,8 @@ class ElCanalDeActions(unittest.TestCase):
                 self.assertRegex(linea, r"^::(warning|error|notice) ")
         self.assertIn("%3A%3Astop-commands", salida)
 
+    @unittest.skipIf(os.name == "nt",
+                     "«:» es ilegal en nombres de archivo de Windows")
     def test_en_terminal_la_ruta_sale_tal_cual(self):
         td = repo_temporal(
             {"::stop-commands::x": 'password = "Kx9mPqR2vNw8LtY4"\n'})
@@ -1625,6 +1629,104 @@ class HistorialCompleto(unittest.TestCase):
             self.assertEqual(codigo, 1, salida)
             self.assertIn("peña.pem", salida)
             self.assertNotIn("\\303", salida)
+
+
+class AlcanceDelHistorial(unittest.TestCase):
+    """v0.15.0: lo que el alcance de la auditoría todavía no veía.
+
+    Un commit colgado de la HEAD suelta, una ruta con comillas que se
+    desdoblaba en fantasma, y los secretos nacidos en un merge sin
+    commit de origen.
+    """
+
+    def _commit(self, raiz, mensaje):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                        "commit", "-q", "-m", mensaje], cwd=raiz, check=True)
+
+    def test_commit_en_head_suelta_se_audita(self):
+        # checkout --detach + commit: alcanzable desde NINGUNA ref. Sin
+        # HEAD en el alcance, la auditoría aprobaba con 0 sin revisarlo —
+        # el mismo agujero que la guardia de shallow, por otra puerta.
+        with TemporaryDirectory() as d:
+            raiz = Path(d)
+            subprocess.run(["git", "init", "-q", "-b", "main"],
+                           cwd=raiz, check=True)
+            (raiz / "a.txt").write_text("hola\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "base")
+            subprocess.run(["git", "checkout", "-q", "--detach"],
+                           cwd=raiz, check=True)
+            (raiz / "secreto.pem").write_text(
+                "-----BEGIN RSA PRIVATE KEY-----\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "fuga")
+            codigo, salida = correr_garita(raiz, "--historial")
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("secreto.pem", salida)
+
+    def test_repo_sin_commits_no_truena(self):
+        # HEAD pelón hace fallar a git en un repo recién inicializado; el
+        # alcance lo añade sólo cuando resuelve.
+        with TemporaryDirectory() as d:
+            raiz = Path(d)
+            subprocess.run(["git", "init", "-q", "-b", "main"],
+                           cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz, "--historial")
+            self.assertEqual(codigo, 0, salida)
+
+    @unittest.skipIf(os.name == "nt",
+                     "las comillas son ilegales en nombres de Windows")
+    def test_ruta_con_comillas_no_desdobla_el_blob(self):
+        # `git log --raw` C-quota las comillas aunque quotepath=false;
+        # la ruta fantasma citada no casaba con RUTAS_DE_PRUEBA y anulaba
+        # la relajación: la llave del fixture salía como ERROR con la
+        # ruta mutilada.
+        from garita.historial import _descitar
+        self.assertEqual('tests/pe"a.pem', _descitar('"tests/pe\\"a.pem"'))
+        with TemporaryDirectory() as d:
+            raiz = Path(d)
+            subprocess.run(["git", "init", "-q", "-b", "main"],
+                           cwd=raiz, check=True)
+            (raiz / "tests").mkdir()
+            (raiz / 'tests/pe"a.pem').write_text(
+                "-----BEGIN RSA PRIVATE KEY-----\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "fixture")
+            codigo, salida = correr_garita(raiz, "--historial")
+            # Una sola ruta, la de pruebas: lo criptográfico se relaja.
+            self.assertEqual(codigo, 0, salida)
+
+    def test_secreto_nacido_en_un_merge_conoce_su_commit(self):
+        # `git log --raw` calla en los merges: un secreto metido al
+        # resolver (el «arreglo rápido» del conflicto) se reportaba con
+        # «desde el commit ? (?)» — justo el dato que quien limpia
+        # necesita para buscar en el historial.
+        with TemporaryDirectory() as d:
+            raiz = Path(d)
+            subprocess.run(["git", "init", "-q", "-b", "main"],
+                           cwd=raiz, check=True)
+            (raiz / "a.txt").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "c1")
+            subprocess.run(["git", "checkout", "-qb", "lado"],
+                           cwd=raiz, check=True)
+            (raiz / "b.txt").write_text("lado\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "c2")
+            subprocess.run(["git", "checkout", "-q", "main"],
+                           cwd=raiz, check=True)
+            (raiz / "c.txt").write_text("main\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "c3")
+            subprocess.run(["git", "merge", "lado", "--no-commit",
+                            "--no-ff", "-q"], cwd=raiz, check=True)
+            (raiz / "colado.py").write_text(
+                'password = "Kx9mPqR2vNw8LtY4"\n', encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "merge con sorpresa")
+            codigo, salida = correr_garita(raiz, "--historial")
+            self.assertIn("colado.py", salida)
+            self.assertNotIn("commit ? (?)", salida)
 
 
 class RegresionesDelHistorial(unittest.TestCase):
