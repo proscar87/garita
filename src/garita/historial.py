@@ -90,9 +90,19 @@ class ResultadoHistorial:
         return [h for h in self.hallazgos if h.hallazgo.severidad == "aviso"]
 
 
+# Ramas, tags Y remotos: en un clon fresco las ramas de origin que nunca se
+# mergearon sólo existen como refs remotas, y una auditoría que no las ve
+# declara limpio un historial que no revisó.
+_ALCANCE = ("--branches", "--tags", "--remotes")
+
+
 def _git(raiz: Path, *args: str) -> bytes:
+    # core.quotepath=false: sin esto, git entrega «peña.pem» como
+    # «"pe\303\261a.pem"» en --raw y la ruta se reporta mutilada (y ni
+    # coincide con la misma ruta sin comillas que da rev-list).
     return subprocess.run(
-        ["git", *args], cwd=raiz, capture_output=True, check=True,
+        ["git", "-c", "core.quotepath=false", *args],
+        cwd=raiz, capture_output=True, check=True,
     ).stdout
 
 
@@ -119,14 +129,14 @@ def _blobs_del_historial(raiz: Path) -> dict[str, list[str]]:
     cambio como cualquiera. Los commits y árboles se filtran después con
     `cat-file --batch-check`, que además trae el tamaño.
     """
-    crudo = _git(raiz, "rev-list", "--objects", "--branches", "--tags")
+    crudo = _git(raiz, "rev-list", "--objects", *_ALCANCE)
     blobs: dict[str, list[str]] = {}
     for linea in crudo.decode("utf-8", "replace").splitlines():
         sha, _, ruta = linea.partition(" ")
         if ruta:  # los commits vienen sin ruta; los árboles se filtran luego
             blobs.setdefault(sha, [ruta])
 
-    crudo = _git(raiz, "log", "--branches", "--tags", "--raw", "--no-abbrev",
+    crudo = _git(raiz, "log", *_ALCANCE, "--raw", "--no-abbrev",
                  "--format=")
     for linea in crudo.decode("utf-8", "replace").splitlines():
         if not linea.startswith(":"):
@@ -191,7 +201,7 @@ def _origen_de(raiz: Path, sucios: set[str]) -> dict[str, tuple[str, str, str]]:
     if not sucios:
         return {}
     crudo = _git(
-        raiz, "log", "--branches", "--tags", "--raw", "--no-abbrev",
+        raiz, "log", *_ALCANCE, "--raw", "--no-abbrev",
         "--date=short", "--format=%x01%h %ad",
     )
     origen: dict[str, tuple[str, str, str]] = {}
@@ -237,7 +247,7 @@ def revisar_historial(
     if not blobs:
         return res
     res.commits = int(
-        _git(raiz, "rev-list", "--branches", "--tags", "--count") or b"0")
+        _git(raiz, "rev-list", *_ALCANCE, "--count") or b"0")
 
     tamanos = _tamanos(raiz, list(blobs))
 

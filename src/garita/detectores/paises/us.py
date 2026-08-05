@@ -38,18 +38,25 @@ def ssn_valido(v: str) -> bool:
     if not re.fullmatch(r"\d{9}", d):
         return False
     area, grupo, serie = d[:3], d[3:5], d[5:]
-    if area in ("000", "666") or area.startswith("9"):
+    if grupo == "00" or serie == "0000":
         return False
-    return grupo != "00" and serie != "0000"
+    if area.startswith("9"):
+        # Área 9xx no es un SSN — pero SÍ puede ser un ITIN, que el propio
+        # contexto anuncia («itin»). El IRS los asigna con el grupo en rangos
+        # fijos; fuera de ellos, sigue sin ser nada.
+        g = int(grupo)
+        return 50 <= g <= 65 or 70 <= g <= 88 or 90 <= g <= 92 or 94 <= g <= 99
+    return area not in ("000", "666")
 
 
 def detectores(cfg: Config) -> list[Detector]:
     if not cfg.activo("ssn"):
         return []
-    return [Detector("ssn", "SSN estadounidense (estructura SSA + contexto obligatorio)",
+    return [Detector("ssn", "SSN o ITIN estadounidense (estructura + contexto obligatorio)",
                      buscador(
         _SSN, ssn_valido, "ssn",
-        "Parece un Social Security Number, mencionado junto a palabras que "
-        "lo confirman. Un SSN identifica a una persona ante el gobierno y "
-        "la banca de EE.UU. y es la pieza central del robo de identidad.",
+        "Parece un Social Security Number (o un ITIN, su equivalente para "
+        "contribuyentes sin SSN), mencionado junto a palabras que lo "
+        "confirman. Identifica a una persona ante el gobierno y la banca de "
+        "EE.UU. y es la pieza central del robo de identidad.",
         exentos=EXENTOS_SSN, contexto=_CONTEXTO, exige_contexto=True))]

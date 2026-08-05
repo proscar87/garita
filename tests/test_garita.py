@@ -1308,6 +1308,157 @@ class ElVeredictoNoMiente(unittest.TestCase):
             os.unlink(destino.name)
 
 
+class ElCliNoSorprende(unittest.TestCase):
+    """v0.10.0: banderas que se aceptaban y no se obedecían.
+
+    Aceptar una orden y no cumplirla es la versión de interfaz de aprobar
+    sin revisar. Cada caso se reprodujo antes de arreglarse.
+    """
+
+    REPO = {"app.py": 'url = "postgres://app:Kx9mPqR2vNw8@db/prod"\n'}
+
+    def test_salida_hacia_directorio_inexistente_es_codigo_2(self):
+        # Tronaba con traceback y código 1 — el reservado para «hay
+        # hallazgos» — mandando a buscar un dato personal que no existe.
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            codigo, salida = correr_garita(
+                Path(td.name), "--formato", "sarif",
+                "--salida", "no/existe/x.sarif")
+            self.assertEqual(codigo, 2, salida)
+            self.assertIn("no pude escribir", salida)
+
+    def test_linea_base_rechaza_formato_y_salida(self):
+        # Aceptaba --formato sarif y lo ignoraba: congelaba sin documento.
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            codigo, salida = correr_garita(
+                Path(td.name), "--linea-base", "--formato", "sarif")
+            self.assertEqual(codigo, 2, salida)
+            self.assertIn("--linea-base", salida)
+
+    def test_explicar_rechaza_formato(self):
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            codigo, salida = correr_garita(
+                Path(td.name), "--explicar", "--formato", "html")
+            self.assertEqual(codigo, 2, salida)
+
+    def test_explicar_de_punta_a_punta(self):
+        # El primer comando que el README enseña no tenía ni una prueba.
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            codigo, salida = correr_garita(Path(td.name), "--explicar")
+            self.assertEqual(codigo, 0, salida)
+            self.assertIn("Detectores activos", salida)
+
+    def test_sin_color_apaga_el_ansi_hasta_en_terminal(self):
+        # La bandera existía desde el principio y no se leía en ninguna
+        # parte: quien la pasaba seguía recibiendo colores.
+        from garita.reporte import imprimir
+
+        class TTY(io.StringIO):
+            def isatty(self):
+                return True
+
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            raiz = Path(td.name)
+            cfg = cargar_config(raiz)
+            res = revisar(raiz, construir(cfg, raiz), cfg.exenciones)
+        con, sin = TTY(), TTY()
+        imprimir(res, salida=con)
+        imprimir(res, salida=sin, sin_color=True)
+        self.assertIn("\x1b[", con.getvalue())
+        self.assertNotIn("\x1b[", sin.getvalue())
+
+    def test_fallar_en_aviso_cambia_el_veredicto(self):
+        # Las dos ramas del código de salida no tenían ninguna prueba.
+        aviso = {"conf.py": 'password = "Kx9mPqR2vNw8LtY4"\n'}
+        td = repo_temporal(dict(aviso))
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 0, salida)
+        td = repo_temporal({**aviso, ".garita.yml": "fallar_en_aviso: true\n"})
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 1, salida)
+
+    def test_anotaciones_escapan_la_sintaxis(self):
+        # «::error file=…,line=…::» usa %, coma y dos puntos como sintaxis:
+        # una ruta con coma partía la anotación en dos propiedades.
+        from garita.nucleo import Hallazgo, Resultado
+        from garita.reporte import anotaciones_github
+        h = Hallazgo(archivo="datos, viejos/f.py", linea=3, detector="x",
+                     que="q", por_que="50% del riesgo", como_arreglar="rota")
+        buf = io.StringIO()
+        previo = os.environ.get("GITHUB_ACTIONS")
+        os.environ["GITHUB_ACTIONS"] = "true"
+        try:
+            anotaciones_github(Resultado(hallazgos=[h]), salida=buf)
+        finally:
+            if previo is None:
+                del os.environ["GITHUB_ACTIONS"]
+            else:
+                os.environ["GITHUB_ACTIONS"] = previo
+        linea = buf.getvalue()
+        self.assertIn("file=datos%2C viejos/f.py", linea)
+        self.assertIn("50%25 del riesgo", linea)
+
+
+class HistorialCompleto(unittest.TestCase):
+    """La auditoría ve ramas remotas y rutas con acentos. (v0.10.0)"""
+
+    def _commit(self, raiz, mensaje):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                        "commit", "-q", "-m", mensaje], cwd=raiz, check=True)
+
+    def test_la_rama_de_origin_sin_mergear_tambien_se_audita(self):
+        # En un clon fresco esa rama sólo existe como ref remota; sin
+        # --remotes la auditoría declaraba limpio lo que nunca vio.
+        with TemporaryDirectory() as d:
+            origen = Path(d) / "origen"
+            origen.mkdir()
+            subprocess.run(["git", "init", "-q", "-b", "main"],
+                           cwd=origen, check=True)
+            (origen / "leeme.md").write_text("hola\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=origen, check=True)
+            self._commit(origen, "base")
+            subprocess.run(["git", "checkout", "-qb", "fuga"],
+                           cwd=origen, check=True)
+            (origen / "colado.pem").write_text(
+                "-----BEGIN RSA PRIVATE KEY-----\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=origen, check=True)
+            self._commit(origen, "secreto en rama")
+            subprocess.run(["git", "checkout", "-q", "main"],
+                           cwd=origen, check=True)
+            clon = Path(d) / "clon"
+            subprocess.run(["git", "clone", "-q", f"file://{origen}",
+                            str(clon)], check=True)
+            codigo, salida = correr_garita(clon, "--historial")
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("colado.pem", salida)
+
+    def test_ruta_con_ene_se_reporta_entera(self):
+        # git la entregaba C-quoted («"pe\303\261a.pem"») y así se
+        # reportaba: mutilada y sin coincidir con la misma ruta de rev-list.
+        with TemporaryDirectory() as d:
+            raiz = Path(d)
+            subprocess.run(["git", "init", "-q", "-b", "main"],
+                           cwd=raiz, check=True)
+            (raiz / "peña.pem").write_text(
+                "-----BEGIN RSA PRIVATE KEY-----\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "entra")
+            subprocess.run(["git", "rm", "-q", "peña.pem"],
+                           cwd=raiz, check=True)
+            self._commit(raiz, "sale")
+            codigo, salida = correr_garita(raiz, "--historial")
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("peña.pem", salida)
+            self.assertNotIn("\\303", salida)
+
+
 class RegresionesDelHistorial(unittest.TestCase):
     """Falsos positivos que salieron al auditar historiales completos de
     proyectos reales (requests: 307 antes de esto, 5 después). El pasado de
@@ -1519,7 +1670,9 @@ class PaisesNuevos(unittest.TestCase):
     def test_ssn_estructura_ssa(self):
         from garita.detectores.paises.us import ssn_valido
         self.assertTrue(ssn_valido("531882074"))
-        for malo in ("000882074", "666882074", "900882074",
+        # 9xx con grupo de ITIN (50-65, 70-88, 90-92, 94-99) ya no es
+        # «malo»: es un ITIN. Fuera de esos grupos sigue sin ser nada.
+        for malo in ("000882074", "666882074", "900452074",
                      "531002074", "531880000"):
             self.assertFalse(ssn_valido(malo), malo)
 
@@ -1719,6 +1872,62 @@ class PaisesNuevos2(unittest.TestCase):
         self.assertFalse(list(d.buscar('"ts": "20010706161900",', "x")))
         self.assertTrue(list(d.buscar("empresa 12.345.678/0001-95", "x")))
         self.assertTrue(list(d.buscar("cnpj: 12345678000195", "x")))
+
+
+class PaisesCalibrados(unittest.TestCase):
+    """v0.10.0: los detectores de país contra la vida real del software.
+
+    Cada caso de aquí se reprodujo antes de arreglarse (regla del roadmap).
+    """
+
+    def _det(self, nombre):
+        from garita.config import Config
+        import importlib
+        mods = {"ci_uy": "uy", "cif": "es", "nie": "es", "ssn": "us",
+                "nit": "co"}
+        mod = importlib.import_module(
+            f"garita.detectores.paises.{mods[nombre]}")
+        return {x.nombre: x for x in mod.detectores(Config())}[nombre]
+
+    def test_uy_la_integracion_continua_no_es_una_cedula(self):
+        # «CI corrió el 20250801»: la fecha pasa el módulo 10 y la palabra
+        # «ci» — integración continua — la reforzaba. La misma lección que
+        # ca.py documenta con «SIN».
+        d = self._det("ci_uy")
+        self.assertFalse(list(d.buscar("CI corrio el 20250801 sin fallas", "x")))
+
+    def test_uy_con_puntos_o_palabra_completa_si(self):
+        d = self._det("ci_uy")
+        self.assertTrue(list(d.buscar("c.i. 4.870.913-5 del titular", "x")))
+        self.assertTrue(list(d.buscar("cédula 4.870.913-5", "x")))
+
+    def test_es_cif_con_guion_es_la_forma_comun(self):
+        d = self._det("cif")
+        self.assertTrue(list(d.buscar("proveedor B-58800004 facturando", "x")))
+
+    def test_es_nie_pelon_ya_no_suena_solo(self):
+        # Una letra de control es 1/23: «lote X1234567L» valida por azar.
+        # Con separadores o con la palabra que lo nombre, sí.
+        d = self._det("nie")
+        self.assertFalse(list(d.buscar("lote X1234567L revisado", "x")))
+        self.assertTrue(list(d.buscar("NIE X1234567L del residente", "x")))
+        self.assertTrue(list(d.buscar("doc X-1234567-L", "x")))
+
+    def test_us_itin_por_fin_detectable(self):
+        # El contexto anunciaba «itin» pero toda área 9xx se rechazaba.
+        d = self._det("ssn")
+        self.assertTrue(list(d.buscar("ITIN: 912-70-1234 del contribuyente", "x")))
+        # Fuera de los rangos de grupo del IRS sigue sin ser nada.
+        self.assertFalse(list(d.buscar("ITIN: 912-45-1234", "x")))
+        # Y un SSN normal sigue exigiendo su palabra.
+        self.assertTrue(list(d.buscar("SSN: 531-88-2074", "x")))
+
+    def test_co_nit_de_cedula_antigua(self):
+        # Las cédulas viejas (hoy NIT de persona natural) tienen base de
+        # ocho dígitos; exigir nueve las dejaba todas fuera.
+        d = self._det("nit")
+        self.assertTrue(list(d.buscar("NIT 12.345.678-8 del proveedor", "x")))
+        self.assertTrue(list(d.buscar("NIT 900.123.456-8", "x")))
 
 
 class DeteccionViva(unittest.TestCase):

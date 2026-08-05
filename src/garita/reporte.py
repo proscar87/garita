@@ -43,11 +43,12 @@ def _color(activo: bool):
 
 
 def imprimir(res: Resultado, salida=None, base=None,
-             nuevos=None, conocidos=None, pagadas=None) -> None:
+             nuevos=None, conocidos=None, pagadas=None,
+             sin_color=False) -> None:
     # sys.stdout se resuelve al llamar, no al importar: un default evaluado
     # en el import ignora las redirecciones (contextlib.redirect_stdout).
     salida = salida if salida is not None else sys.stdout
-    color = _color(salida.isatty() and not _en_github())
+    color = _color(salida.isatty() and not _en_github() and not sin_color)
     n = color
 
     # Sin línea base, todo hallazgo es nuevo y el reporte queda como siempre.
@@ -193,6 +194,17 @@ def _bloque_linea_base(base, conocidos, pagadas, n, salida) -> None:
                 "archivo.", "gris"), file=salida)
 
 
+# El formato «::error file=…,line=…::mensaje» usa %, coma y dos puntos como
+# sintaxis. GitHub define estos escapes; sin ellos, una ruta con coma parte
+# la anotación en dos propiedades y un «%» del mensaje se interpreta.
+def _dato(v: str) -> str:
+    return v.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _propiedad(v) -> str:
+    return (_dato(str(v)).replace(":", "%3A").replace(",", "%2C"))
+
+
 def anotaciones_github(res: Resultado, salida=None, conocidos=()) -> None:
     """Marca las líneas en la interfaz de GitHub.
 
@@ -213,10 +225,10 @@ def anotaciones_github(res: Resultado, salida=None, conocidos=()) -> None:
         else:
             tipo = "error" if h.severidad == "error" else "warning"
             detalle = ""
-        # Los saltos de línea rompen el formato de anotación; van como %0A.
-        mensaje = f"{h.por_que} → {h.como_arreglar}".replace("\n", "%0A")
-        print(f"::{tipo} file={h.archivo},line={h.linea},"
-              f"title=Garita: {h.detector}{detalle}::{mensaje}", file=salida)
+        mensaje = _dato(f"{h.por_que} → {h.como_arreglar}")
+        titulo = _propiedad(f"Garita: {h.detector}{detalle}")
+        print(f"::{tipo} file={_propiedad(h.archivo)},line={h.linea},"
+              f"title={titulo}::{mensaje}", file=salida)
 
 
 def resumen_markdown(res: Resultado, base=None, nuevos=None,
@@ -251,14 +263,14 @@ def resumen_markdown(res: Resultado, base=None, nuevos=None,
     return "\n".join(lineas) + "\n"
 
 
-def imprimir_historial(res, salida=None) -> None:
+def imprimir_historial(res, salida=None, sin_color=False) -> None:
     """El reporte del historial separa lo que la revisión normal ya ve de lo
     que sólo el historial recuerda, porque el arreglo es distinto: lo vivo
     se arregla editando; lo «borrado» sólo se arregla rotando — y, si se
     decide, reescribiendo historia con respaldo. Decirlos revueltos invita
     a arreglar el que se ve y creer que el otro no existe."""
     salida = salida if salida is not None else sys.stdout
-    n = _color(salida.isatty() and not _en_github())
+    n = _color(salida.isatty() and not _en_github() and not sin_color)
 
     if res.omitidos_grandes:
         print(file=salida)

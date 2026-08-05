@@ -102,7 +102,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--salida", metavar="RUTA",
                    help="con --formato sarif o html, escribe el documento "
                         "ahí en vez de stdout")
-    p.add_argument("--sin-color", action="store_true")
+    p.add_argument("--sin-color", action="store_true",
+                   help="reporte sin colores ANSI aunque la salida sea una "
+                        "terminal")
     p.add_argument("--version", action="version", version=f"garita {__version__}")
     args = p.parse_args(argv)
 
@@ -111,6 +113,16 @@ def main(argv: list[str] | None = None) -> int:
         # aceptar la bandera y sorprender después es peor que rechazarla.
         print("Garita: --salida sólo aplica con --formato sarif o html.",
               file=sys.stderr)
+        return 2
+
+    if (args.explicar or args.linea_base) and (args.formato != "humano"
+                                               or args.salida):
+        # Aceptar la bandera y no obedecerla es mentir dos veces: quien pide
+        # SARIF de --linea-base recibiría una congelación sin documento y
+        # esperaría un archivo que nunca se escribió.
+        que = "--explicar" if args.explicar else "--linea-base"
+        print(f"Garita: --formato/--salida no aplican con {que}; ese modo "
+              f"no produce documento.", file=sys.stderr)
         return 2
 
     raiz = raiz_repo(Path.cwd())
@@ -244,11 +256,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if documento is not None:
         if args.salida:
-            Path(args.salida).write_text(documento, encoding="utf-8")
+            if not _escribir_documento(args.salida, documento):
+                return 2
             # El documento ya quedó en su archivo; la consola sigue siendo
             # para humanos.
             imprimir(res, base=base, nuevos=nuevos, conocidos=conocidos,
-                     pagadas=pagadas)
+                     pagadas=pagadas, sin_color=args.sin_color)
             anotaciones_github(res, conocidos=conocidos)
         else:
             # stdout ES el documento: cualquier otra cosa ahí —reporte,
@@ -256,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write(documento)
     else:
         imprimir(res, base=base, nuevos=nuevos, conocidos=conocidos,
-                 pagadas=pagadas)
+                 pagadas=pagadas, sin_color=args.sin_color)
         anotaciones_github(res, conocidos=conocidos)
 
     resumen = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -273,6 +286,21 @@ def main(argv: list[str] | None = None) -> int:
     if cfg.fallar_en_aviso and any(h.severidad == "aviso" for h in nuevos):
         return 1
     return 0
+
+
+def _escribir_documento(ruta: str, documento: str) -> bool:
+    """Escribe el documento pedido; si no se puede, se DICE y es código 2.
+
+    Sin esto, un directorio inexistente en --salida tronaba con traceback y
+    código 1 — el reservado para «hay hallazgos» — y mandaba a alguien a
+    buscar un dato personal que no existe."""
+    try:
+        Path(ruta).write_text(documento, encoding="utf-8")
+        return True
+    except OSError as e:
+        print(f"Garita: no pude escribir --salida «{ruta}»: "
+              f"{e.strerror or e}.", file=sys.stderr)
+        return False
 
 
 def _salida_de_action(hallazgos: int) -> None:
@@ -330,12 +358,13 @@ def _historial(args, cfg, detectores, raiz: Path) -> int:
 
     if documento is not None:
         if args.salida:
-            Path(args.salida).write_text(documento, encoding="utf-8")
-            imprimir_historial(res)
+            if not _escribir_documento(args.salida, documento):
+                return 2
+            imprimir_historial(res, sin_color=args.sin_color)
         else:
             sys.stdout.write(documento)
     else:
-        imprimir_historial(res)
+        imprimir_historial(res, sin_color=args.sin_color)
 
     _salida_de_action(len(res.hallazgos))
     if res.errores:

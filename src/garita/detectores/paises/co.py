@@ -20,12 +20,16 @@ from ...config import Config
 from ...nucleo import Detector
 from ._comun import buscador, limpio
 
-_NIT = re.compile(r"(?<![\d.\-])\d{3}\.?\d{3}\.?\d{3}\s?-?\s?\d(?![\d\-])")
+# Base de 8 O 9 dígitos: las cédulas antiguas (hoy NIT de persona natural)
+# tienen ocho, y exigir nueve las dejaba todas fuera.
+_NIT = re.compile(r"(?<![\d.\-])\d{2,3}\.?\d{3}\.?\d{3}\s?-?\s?\d(?![\d\-])")
 _PESOS = [3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71]
 
-# «Consumidor final» de la Resolución DIAN 000042 de 2020: no identifica a
-# nadie y aparece en cualquier sistema de facturación colombiano.
-EXENTOS = {"222222222222"}
+# El «222222222222» de consumidor final (Resolución DIAN 000042 de 2020) NO
+# está exento a propósito: son doce dígitos, la regex admite diez a lo sumo y
+# sus truncados no pasan el dígito de la DIAN — nunca llega a validarse. Un
+# exento que no puede casar es código muerto que aparenta protección.
+EXENTOS: set[str] = set()
 
 _CONTEXTO = re.compile(r"(?i)\b(nit|r[uú]t|dian|c[eé]dula|c\.?c\.?|nuip|factura)\b")
 

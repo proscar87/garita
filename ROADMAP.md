@@ -84,14 +84,14 @@ al final lo cosmético.
 
 ### Detectores de país
 
-- [ ] **UY: «ci» como palabra de contexto choca con la integración
+- [x] **UY: «ci» como palabra de contexto choca con la integración
   continua** — `src/garita/detectores/paises/uy.py:22`. «CI corrio el
   20250801» produce un ERROR: la fecha pasa el módulo 10 y el contexto
   insensible a mayúsculas la refuerza. Es la misma lección que `ca.py` ya
   documenta con «SIN». Arreglo: quitar «ci» pelona; aceptar solo
   `c\.i\.` con puntos.
 
-- [ ] **ES: la regex del CIF rechaza «B-12345678», la forma más común por
+- [x] **ES: la regex del CIF rechaza «B-12345678», la forma más común por
   escrito** — `src/garita/detectores/paises/es.py:26`. DNI y NIE aceptan
   separadores; el CIF no, así que la rama de separadores de
   `exige_refuerzo` queda muerta y la forma habitual nunca casa. Arreglo:
@@ -109,45 +109,14 @@ al final lo cosmético.
 
 ## 2. Plausible, sin verificar aún
 
-Reportado por la oleada pero sin reproducción independiente. Verificar cada
-uno antes de arreglar (el único hallazgo refutado de la oleada —«el hook lee
-el árbol, no el index»— se cayó justo en esa fase: el framework pre-commit
-hace stash y el escenario no existe).
-
-**Falsos negativos de país**
-- US: el contexto anuncia «itin» pero `ssn_valido` rechaza toda área 9xx —
-  un ITIN jamás se detecta (`us.py:41`).
-- CO: los NIT con base de 8 dígitos (cédulas antiguas) validan pero la regex
-  exige 10; además el exento «222222222222» es código muerto (`co.py:23`).
-- ES: el NIE se arma sin `exige_refuerzo`, contra la política documentada en
-  `_comun.py` para identificadores con un solo carácter de control
-  (`es.py:106`).
-
-**Falsos negativos de secretos**
-- *(Los dos de esta categoría se verificaron al arrancar v0.9.0 y subieron
-  a la sección 1, ya arreglados.)*
-
-**CLI y reportes**
-- `--salida` hacia un directorio inexistente truena con traceback y exit 1 —
-  el código reservado para «hay hallazgos» (`cli.py:219`).
-- `--linea-base` y `--explicar` aceptan e ignoran `--formato`/`--salida`
-  (`cli.py:170`).
-- Las anotaciones de GitHub no escapan `%`, `\r`, comas ni dos puntos en las
-  propiedades (`reporte.py:218`).
-- `--sin-color` se acepta pero no se lee en ninguna parte (`cli.py:105`).
-
-**Historial**
-- `--historial` usa `--branches --tags` sin `--remotes`: en un clon fresco
-  las ramas de origin que nunca se mergearon quedan fuera de la auditoría
-  (`historial.py:106`).
-- Rutas no ASCII llegan C-quoted desde `git log --raw` y se reportan
-  mutiladas (`historial.py:181`).
-
-**Cobertura de pruebas**
-- `fallar_en_aviso` no tiene ninguna prueba: las dos ramas de exit code
-  quedan sin ejercitar (`cli.py:244,289`).
-- `garita --explicar` — el primer comando que el README enseña — no tiene
-  ninguna prueba de punta a punta (`cli.py:324`).
+*(Vacía desde v0.10.0: los quince se verificaron uno por uno — cada uno se
+reprodujo antes de tocarse — y los quince resultaron reales. Los dos de
+secretos entraron en v0.9.0; país, CLI, reportes, historial y la deuda de
+pruebas, en v0.10.0: ITIN detectable, NIT de base 8, NIE con refuerzo,
+`redis://:pass@host`, asignaciones con `finditer`, `--salida` con código 2,
+`--linea-base`/`--explicar` rechazan banderas que ignorarían, anotaciones
+escapadas, `--sin-color` operativo, `--remotes` en la auditoría, rutas no
+ASCII enteras, y pruebas para `fallar_en_aviso` y `--explicar`.)*
 
 ---
 
@@ -175,7 +144,7 @@ hace stash y el escenario no existe).
 
 | Versión | Tema | Contenido |
 |---------|------|-----------|
-| v0.8.0 | El veredicto no miente | Los cuatro de «el veredicto no debe mentir» + la salida de la Action |
-| v0.9.0 | Calibración de secretos | MARCADORES anclado, formatos vigentes de proveedor, y los plausibles de secretos que sobrevivan verificación |
-| v0.10.0 | Países al día | UY, ES, y los plausibles de país que sobrevivan; catálogo ABM |
+| v0.8.0 ✓ | El veredicto no miente | Los cuatro de «el veredicto no debe mentir» + la salida de la Action |
+| v0.9.0 ✓ | Calibración de secretos | MARCADORES anclado, formatos vigentes de proveedor, y los plausibles de secretos que sobrevivan verificación |
+| v0.10.0 ✓ | Países al día + el CLI no sorprende | UY, ES, y los plausibles de país que sobrevivan; catálogo ABM |
 | continuo | Deuda de pruebas | `fallar_en_aviso`, `--explicar`, `--sin-color`, salida de la Action |

@@ -19,7 +19,11 @@ from ...nucleo import Detector
 from ._comun import buscador, limpio
 
 _CI = re.compile(r"(?<![\d.\-])\d\.?\d{3}\.?\d{3}\s?-?\s?\d(?![\d\-])")
-_CONTEXTO = re.compile(r"(?i)\b(c[eé]dula|ci|documento|identidad)\b")
+# «ci» pelona NO refuerza: en un repositorio de software, CI es integración
+# continua («CI corrió el 20250801» — y una fecha AAAAMMDD pasa el módulo 10
+# una de cada diez veces). La misma lección que ca.py documenta con «SIN».
+# Con puntos —«c.i.»— sí es la cédula, porque así la abrevian los documentos.
+_CONTEXTO = re.compile(r"(?i)\b(c[eé]dula|documento|identidad)\b|\bc\.\s?i\.")
 _PESOS = (2, 9, 8, 7, 6, 3, 4)
 
 # 1.234.567-2 valida y es el ejemplo de los instructivos; los repetidos

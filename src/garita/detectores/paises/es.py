@@ -23,7 +23,10 @@ from ._comun import buscador, limpio
 _TABLA = "TRWAGMYFPDXBNJZSQVHLCKE"
 _DNI = re.compile(r"(?<![\w-])\d{8}\s?-?\s?[A-Za-z](?![\w-])")
 _NIE = re.compile(r"(?<![\w-])[XYZxyz]\s?-?\s?\d{7}\s?-?\s?[A-Za-z](?![\w-])")
-_CIF = re.compile(r"(?<![\w-])[A-HJ-NP-SUVWa-hj-np-suvw]\d{7}[0-9A-Ja-j](?![\w-])")
+# Mismos separadores que el NIE: «B-12345678» es la forma más común por
+# escrito, y sin admitirla la rama de separadores del refuerzo quedaba muerta.
+_CIF = re.compile(
+    r"(?<![\w-])[A-HJ-NP-SUVWa-hj-np-suvw]\s?-?\s?\d{7}\s?-?\s?[0-9A-Ja-j](?![\w-])")
 _IBAN = re.compile(r"(?<![\w])ES\s?\d{2}(?:\s?\d{4}){5}(?![\w])", re.IGNORECASE)
 
 _CTRL_CIF = "JABCDEFGHI"
@@ -100,10 +103,12 @@ def detectores(cfg: Config) -> list[Detector]:
             "Es un DNI español con letra de control válida. Identifica a una "
             "persona de forma única.", EXENTOS, _CONTEXTO, exige_refuerzo=True)))
     if cfg.activo("nie"):
+        # Una sola letra de control (1/23) → refuerzo, como el DNI y como
+        # manda la regla de _comun: «lote X1234567L» valida por azar.
         d.append(Detector("nie", "NIE español", buscador(
             _NIE, nie_valido, "nie",
             "Es un NIE con letra de control válida. Identifica a una persona "
-            "extranjera residente.", EXENTOS, _CONTEXTO)))
+            "extranjera residente.", EXENTOS, _CONTEXTO, exige_refuerzo=True)))
     if cfg.activo("cif"):
         d.append(Detector("cif", "CIF de entidad española", buscador(
             _CIF, cif_valido, "cif",
