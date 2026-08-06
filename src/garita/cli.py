@@ -315,6 +315,12 @@ def main(argv: list[str] | None = None) -> int:
     if not _salida_de_action(len(nuevos)):
         return 2
 
+    # Un archivo que git rastrea y no se pudo abrir es error de ENTORNO,
+    # no un hallazgo: código 2, y nunca 0. La misma regla que la lista de
+    # nombres que no carga — un guardián que no pudo revisar no aprueba.
+    if res.ilegibles:
+        return 2
+
     # Sólo lo nuevo decide el código de salida; la deuda aceptada ya se
     # imprimió aparte y no reprueba.
     if any(h.severidad == "error" for h in nuevos):

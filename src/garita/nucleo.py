@@ -291,12 +291,25 @@ def descifrar(crudo: bytes) -> str | None:
     return crudo.decode("cp1252", "replace")
 
 
+class Ilegible(Exception):
+    """El archivo existe y git lo rastrea, pero no se pudo abrir.
+
+    No es lo mismo que binario, y confundirlos era el peor modo de falla:
+    un permiso denegado o un E/S a media corrida se contaba como «omitido
+    (binario o muy grande)», sin nombrar el archivo y sin tocar el
+    veredicto. Se aprobaba con 0 algo que nadie miró — la marca verde sin
+    revisión que esta herramienta existe para no producir."""
+
+
 def leer(ruta: Path) -> str | None:
-    """Devuelve el texto del archivo, o None si es binario o ilegible."""
+    """Devuelve el texto del archivo, o None si es binario.
+
+    Levanta `Ilegible` si no se pudo abrir: eso no se decide en silencio.
+    """
     try:
         crudo = ruta.read_bytes()
-    except OSError:
-        return None
+    except OSError as e:
+        raise Ilegible(f"{e.strerror or e}") from e
     return descifrar(crudo)
 
 
@@ -358,6 +371,14 @@ class Exencion:
     no debería exentarlo también de 'llave_privada'."""
 
     def cubre(self, archivo: str, detector: str) -> bool:
+        """¿Esta exención tapa a este detector en este archivo?
+
+        `detector` puede ser el nombre del detector («secretos») o la
+        etiqueta con la que el reporte IMPRIME cada hallazgo suyo
+        («llave_privada», «credencial_en_url», «jwt»). Las dos valen: quien
+        escribe una exención copia lo que ve en el reporte, y antes esa
+        exención no tapaba nada Y TAMPOCO salía como exención muerta.
+        """
         if not casa_ruta(archivo, self.patron):
             return False
         return not self.detectores or detector in self.detectores
@@ -376,6 +397,10 @@ class Resultado:
     exentos_aplicados: dict[str, int] = field(default_factory=dict)
     exenciones_muertas: list[str] = field(default_factory=list)
     """Exenciones cuyo patrón no coincidió con ningún archivo revisado."""
+    ilegibles: list[tuple[str, str]] = field(default_factory=list)
+    """Los que git rastrea y no se pudieron abrir, CON su motivo. Van
+    aparte de los binarios porque no son lo mismo: un binario se decidió
+    no revisar; éste no se pudo, y eso no puede terminar en «✓»."""
 
     @property
     def errores(self) -> list[Hallazgo]:
@@ -409,7 +434,14 @@ def revisar(
             if "tope" in motivo:
                 res.omitidos_grandes.append((rel, motivo))
             continue
-        texto = leer(ruta)
+        try:
+            texto = leer(ruta)
+        except Ilegible as e:
+            # Se dice CON NOMBRE y decide el veredicto: no se aprueba lo
+            # que no se pudo mirar.
+            res.ilegibles.append((rel, str(e)))
+            res.archivos_omitidos += 1
+            continue
         if texto is None:
             res.archivos_omitidos += 1
             continue
@@ -427,6 +459,18 @@ def revisar(
                 )
                 continue
             for h in det.buscar(texto, rel):
+                # Segunda pasada de exenciones, ahora por la ETIQUETA del
+                # hallazgo: el reporte imprime `llave_privada` y quien
+                # escribe la exención copia lo que ve. Antes eso no tapaba
+                # nada y tampoco salía como exención muerta — la peor
+                # combinación, porque quien la escribió cree que aplicó.
+                por_etiqueta = next(
+                    (e for e in exen if e.cubre(rel, h.detector)), None)
+                if por_etiqueta is not None:
+                    res.exentos_aplicados[por_etiqueta.patron] = (
+                        res.exentos_aplicados.get(por_etiqueta.patron, 0) + 1
+                    )
+                    continue
                 # El filtro se aplica sobre la ETIQUETA del hallazgo, no sobre
                 # el nombre del detector: `secretos` produce hallazgos de
                 # `llave_privada`, `jwt` y demás, y sólo algunos se relajan en

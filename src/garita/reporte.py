@@ -83,6 +83,19 @@ def imprimir(res: Resultado, salida=None, base=None,
         print(n("  Un archivo grande es justo donde cabe un padrón entero. "
                 "Revísalos aparte.", "gris"), file=salida)
 
+    # Antes de todo lo demás: lo que NO SE PUDO mirar. Un archivo que git
+    # rastrea y no se pudo abrir no es un binario que se decidió saltar.
+    if getattr(res, "ilegibles", None):
+        print(file=salida)
+        print(n("✗ No se pudieron leer:", "rojo"), file=salida)
+        for archivo, motivo in res.ilegibles[:10]:
+            print(n(f"    {_ruta(archivo)} — {motivo}", "gris"), file=salida)
+        if len(res.ilegibles) > 10:
+            print(n(f"    …y {len(res.ilegibles) - 10} más", "gris"),
+                  file=salida)
+        print(n("  Garita no puede decir que están limpios: no los miró. "
+                "Arregla el acceso y vuelve a correr.", "gris"), file=salida)
+
     if res.exenciones_muertas:
         print(file=salida)
         print(n("! Exenciones que no aplicaron a ningún archivo:", "amarillo"),
@@ -95,7 +108,15 @@ def imprimir(res: Resultado, salida=None, base=None,
               file=salida)
 
     if not nuevos:
-        if conocidos:
+        ilegibles = getattr(res, "ilegibles", None)
+        if ilegibles:
+            # El ✓ estaría mintiendo: hay archivos que nadie miró.
+            print(n(f"✗ Garita: sin hallazgos en lo que pudo revisar, pero "
+                    f"{len(ilegibles)} archivo"
+                    f"{'s' if len(ilegibles) != 1 else ''} no se "
+                    f"pudo{'' if len(ilegibles) == 1 else 'ieron'} leer.",
+                    "rojo"), file=salida)
+        elif conocidos:
             # Todo lo encontrado quedó cubierto por la línea base. Decir
             # «nada que reportar» a secas sería mentir por omisión.
             print(n("✓ Garita: nada nuevo que reportar.", "verde"), file=salida)

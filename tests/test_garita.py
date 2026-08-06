@@ -680,6 +680,74 @@ class ElContratoYElParser(unittest.TestCase):
             self.assertFalse(base.is_file(), salida)
 
 
+class LoQueNoSePudoMirar(unittest.TestCase):
+    """v0.22.0: no se aprueba lo que no se revisó, y las exenciones
+    entienden lo que el reporte imprime."""
+
+    CLABE = "002180000645829179"
+
+    @unittest.skipIf(os.name == "nt", "los permisos POSIX no aplican")
+    @unittest.skipIf(os.geteuid() == 0, "root lee todo")
+    def test_un_archivo_ilegible_no_se_cuenta_como_binario(self):
+        # Se contaba en «omitidos (binarios o muy grandes)», sin nombrarlo
+        # y sin tocar el veredicto: se aprobaba con 0 algo que nadie miró.
+        td = repo_temporal({"secreto.txt": f"CLABE {self.CLABE}\n",
+                            "ok.py": "x = 1\n"})
+        with td:
+            raiz = Path(td.name)
+            objetivo = raiz / "secreto.txt"
+            objetivo.chmod(0o000)
+            try:
+                codigo, salida = correr_garita(raiz)
+            finally:
+                objetivo.chmod(0o644)
+        self.assertEqual(codigo, 2, salida)
+        self.assertIn("secreto.txt", salida)
+        self.assertIn("No se pudieron leer", salida)
+        # Y el ✓ no aparece: estaría mintiendo.
+        self.assertNotIn("✓", salida)
+
+    def test_exentar_por_la_etiqueta_que_imprime_el_reporte(self):
+        # El reporte dice «llave_privada»; la exención sólo entendía
+        # «secretos», así que copiar lo que se ve no exentaba nada — y
+        # tampoco salía como exención muerta.
+        llave = ("-----BEGIN RSA PRIVATE KEY-----\n"
+                 "MIIEfalsaAAAA\n-----END RSA PRIVATE KEY-----\n")
+        td = repo_temporal({
+            "llave.pem": llave,
+            ".garita.yml": ("exenciones:\n  - archivo: llave.pem\n"
+                            "    motivo: fixture de TLS\n"
+                            "    detectores: llave_privada\n"),
+        })
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 0, salida)
+        # Y el nombre del detector sigue valiendo igual.
+        td = repo_temporal({
+            "llave.pem": llave,
+            ".garita.yml": ("exenciones:\n  - archivo: llave.pem\n"
+                            "    motivo: fixture de TLS\n"
+                            "    detectores: secretos\n"),
+        })
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 0, salida)
+
+    def test_el_posesivo_admite_calificativo_en_medio(self):
+        # «yourDatabasePassword» es el placeholder de toda plantilla y se
+        # denunciaba como credencial real.
+        for v in ("yourDatabasePassword", "tu_clave_de_produccion",
+                  "your_api_key_here", "TU_TOKEN_DE_ACCESO"):
+            self.assertTrue(es_marcador(v), v)
+
+    def test_el_posesivo_con_calificativo_no_absuelve_contrasenas(self):
+        # La cuarta cara del posesivo no puede abrir las otras tres: el
+        # sustantivo tiene que ser PALABRA, no subcadena.
+        for v in ("turbopass2024", "Turbina88Xk", "Turquesa9Fuerte42x",
+                  "MiClaveSegura2024", "yourself2024xyz"):
+            self.assertFalse(es_marcador(v), v)
+
+
 class Fuentes(unittest.TestCase):
     def cargar(self, contenido: str, spec: str = "gen.py:PROHIBIDOS"):
         with TemporaryDirectory() as d:

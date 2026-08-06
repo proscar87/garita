@@ -115,7 +115,7 @@ v0.13.0–v0.16.0 (20 de 20) y v0.17.0–v0.20.1 (23 de 23).
 
 ### La robustez
 
-- [ ] **Un archivo ilegible sale como «binario o muy grande» y el repo
+- [x] **Un archivo ilegible sale como «binario o muy grande» y el repo
   aprueba con 0** — `src/garita/nucleo.py:403`. `leer()` devuelve `None` ante
   cualquier `OSError` —permiso denegado, E/S, un archivo que otro paso del
   runner reemplazó a media corrida— y `revisar()` lo trata como binario: se
@@ -150,20 +150,27 @@ v0.13.0–v0.16.0 (20 de 20) y v0.17.0–v0.20.1 (23 de 23).
 
 ### Calibración
 
-- [ ] **`casa_ruta` no poda directorios: «datos/\*» deja de cubrir
-  `datos/regiones/…`** — `nucleo.py:328`. En `.gitignore`, un patrón que casa
-  un directorio excluye su contenido; aquí no. Verificar si conviene: toca la
-  semántica recién estabilizada en v0.20.1, y esa ya se rompió una vez.
+- [~] **`casa_ruta` no poda directorios: «datos/\*» deja de cubrir
+  `datos/regiones/…`** — `nucleo.py:328`. Cierto contra `.gitignore`, pero
+  **refutado por doctrina y no se arregla**: ahí el patrón EXCLUYE de un
+  commit, aquí EXENTA de la revisión, y ampliar una exención es ampliar el
+  silencio. Quien quiera el subárbol escribe `datos/**`, que ya funciona y
+  está documentado. Anotado para que nadie lo «arregle» sin leer esto.
 
-- [ ] **Cortar el token en la coma rompe las URLs con coma** —
-  `_comun.py:80`. Hay URLs legítimas con comas; ahí el aviso se vuelve error.
+- [~] **Cortar el token en la coma rompe las URLs con coma** —
+  `_comun.py:80`. Reproducido: un identificador dentro de
+  `…/@19.4,-99.1/<id>/…` pasa de aviso a error. **Refutado por doctrina y no
+  se arregla**: el caso contrario —la columna de un CSV raspado tras una
+  columna con URL— es un falso negativo de veredicto (salía 0), y el mapa con
+  coma es sólo ruido. Entre callar un dato y hacer ruido, la doctrina elige
+  el ruido.
 
-- [ ] **«your» exigiendo separador deja fuera los marcadores camelCase con
+- [x] **«your» exigiendo separador deja fuera los marcadores camelCase con
   calificativo** — `secretos.py:141`. `yourDatabasePassword` se denuncia como
   credencial real. Sería la cuarta cara del posesivo: cualquier arreglo debe
   probarse contra las otras tres.
 
-- [ ] **Exentar por el nombre de detector que el reporte IMPRIME no exenta
+- [x] **Exentar por el nombre de detector que el reporte IMPRIME no exenta
   nada y no avisa** — `nucleo.py:412`. El reporte dice `llave_privada`,
   `credencial_en_url`, `jwt`; la exención sólo entiende `secretos`. Quien
   copia lo que ve no consigue nada, y tampoco sale como exención muerta.
@@ -205,5 +212,5 @@ v0.13.0–v0.16.0 (20 de 20) y v0.17.0–v0.20.1 (23 de 23).
 | v0.20.2 ✓ | Lo urgente | La regresión de cp1252 y el `rev:` del README |
 | v0.21.0 ✓ | El contrato y el parser | `config` vacío, el clon somero, y los plausibles de veredicto que sobrevivan |
 | ~~v0.22.0~~ | — | Entró completo en v0.21.0 |
-| v0.23.0 | Lo que se dice de lo que no se revisó | El archivo ilegible, `--linea-base` no-op, la ruta del historial |
+| v0.22.0 ✓ | Lo que no se pudo mirar | El archivo ilegible, el posesivo con calificativo, exentar por la etiqueta impresa |
 | continuo | Rendimiento | Los cuatro cuadráticos, con números antes y después |

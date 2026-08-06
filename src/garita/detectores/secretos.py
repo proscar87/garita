@@ -159,6 +159,32 @@ _POSESIVO_ES_TODO = re.compile(
     r"|api[_-]?key|user|usuario|valor|value)\w*[\W_\d]*$"
 )
 
+_SUSTANTIVOS = frozenset((
+    "clave", "llave", "secreto", "contrasena", "contraseña", "pass",
+    "password", "secret", "key", "apikey", "token", "user", "usuario",
+    "valor", "value",
+))
+# Palabras dentro de un valor: los separadores primero, y dentro de cada
+# trozo la transición camelCase. «PASSWORD» en mayúsculas cuenta entero.
+_PALABRAS = re.compile(r"[A-Z]+(?![a-z])|[A-Z][a-z]*|[a-z]+|\d+")
+
+
+def _posesivo_con_calificativo(v: str) -> bool:
+    """«yourDatabasePassword», «tu_clave_de_produccion»: el sustantivo no
+    viene pegado al posesivo, sino más adelante.
+
+    Se exige que el posesivo sea una PALABRA propia del valor (o que el
+    sustantivo lo siga pegado, que es el caso de `_POSESIVO_ES_TODO`), y
+    no una simple subcadena inicial: si no, «turbopass2024» —que empieza
+    por «tu» por casualidad y trae «pass» dentro— se absolvería, y ésa es
+    una contraseña, no una plantilla.
+    """
+    palabras = [p.lower() for parte in re.split(r"[\W_]+", v)
+                for p in _PALABRAS.findall(parte)]
+    if len(palabras) < 2 or palabras[0] not in ("tu", "your"):
+        return False
+    return any(p in _SUSTANTIVOS for p in palabras[1:])
+
 
 def _marcador_delimitado(v: str) -> bool:
     """¿Hay un marcador delimitado de verdad dentro del valor?
@@ -215,7 +241,8 @@ def es_marcador(valor: str) -> bool:
         v = d
     if not v or v.startswith("<") or v.startswith("${") or v.startswith("$("):
         return True
-    if (_POSESIVO_ES_TODO.match(v) or _RELLENO.match(v)
+    if (_POSESIVO_ES_TODO.match(v) or _posesivo_con_calificativo(v)
+            or _RELLENO.match(v)
             or _ES_TODO_MARCADOR.match(v) or _marcador_delimitado(v)):
         return True
     # Un valor de un solo carácter repetido no es un secreto.
