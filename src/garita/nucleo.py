@@ -22,6 +22,8 @@ arreglo real casi nunca es editar la línea.
 """
 from __future__ import annotations
 
+import codecs
+import os
 import fnmatch
 import re
 import subprocess
@@ -225,6 +227,15 @@ _BOM = (
 )
 
 
+# El byte que UTF-8 rechaza se lee como cp1252 —Latin-1 con las comillas
+# tipográficas de Windows—, y sólo ese byte: así un archivo mezclado
+# conserva los acentos de sus DOS mitades.
+codecs.register_error(
+    "garita_cp1252",
+    lambda e: (e.object[e.start:e.end].decode("cp1252", "replace"), e.end),
+)
+
+
 def _utf16_sin_marca(crudo: bytes) -> str | None:
     """UTF-16 al que nadie le puso BOM, reconocido por sus nulos alternados.
 
@@ -274,21 +285,32 @@ def descifrar(crudo: bytes) -> str | None:
 
     if b"\0" in crudo:
         return _utf16_sin_marca(crudo)
-    try:
-        return crudo.decode("utf-8")
-    except UnicodeDecodeError:
-        pass
-    # No es UTF-8 del todo. Pero caer a cp1252 por el archivo entero
-    # ante UN byte malo —una ñ Latin-1 pegada en un export mezclado—
-    # convertía «Cédula» en «CÃ©dula» y dejaba ciego a todo detector con
-    # contexto acentuado, sobre archivos que en su mayoría eran UTF-8
-    # correcto. Sólo se cambia de codificación cuando el intento UTF-8 no
-    # rescata NINGUNA letra acentuada: ése es el Latin-1 puro que se
-    # quería leer, y no el archivo mezclado.
-    tentativa = crudo.decode("utf-8", "replace")
-    if any(c > "\x7f" and c != "�" for c in tentativa):
-        return tentativa
-    return crudo.decode("cp1252", "replace")
+    # La codificación se decide POR BYTE, no por archivo. Las dos versiones
+    # anteriores elegían una codificación para todo el archivo y por eso
+    # cada arreglo abría la ceguera contraria: primero un byte Latin-1
+    # suelto arruinaba los acentos del UTF-8 mayoritario, y después un
+    # carácter UTF-8 suelto arruinaba los del padrón Latin-1. Los archivos
+    # de codificación mezclada existen —un export de Excel al que alguien
+    # le pegó una línea desde un editor moderno— y las dos direcciones se
+    # pueden servir a la vez: se decodifica UTF-8 y sólo las secuencias
+    # inválidas se leen como cp1252.
+    return crudo.decode("utf-8", "garita_cp1252")
+
+
+def _existe_pero_no_se_alcanza(ruta: Path) -> bool:
+    """¿La ruta no se pudo resolver por un permiso, en vez de no existir?
+
+    git rastrea el archivo; si no se alcanza, es un impedimento del
+    entorno y no un archivo borrado. Se distingue mirando si algún
+    directorio del camino niega el paso.
+    """
+    for padre in ruta.parents:
+        try:
+            if padre.is_dir():
+                return not os.access(padre, os.X_OK)
+        except OSError:
+            return True
+    return False
 
 
 class Ilegible(Exception):
@@ -425,7 +447,24 @@ def revisar(
 
     for rel in (archivos if archivos is not None else archivos_versionados(raiz)):
         ruta = raiz / rel
-        if not ruta.is_file():
+        # `is_file()` se traga el OSError y devuelve False, así que un
+        # DIRECTORIO sin permiso de ejecución —la forma habitual del
+        # problema en un contenedor de CI con otro UID— hacía pasar el
+        # archivo por «no existe» y de ahí a «omitido». Se pregunta primero
+        # si git lo rastrea: si lo rastrea y no se puede mirar, se dice.
+        try:
+            es_archivo = ruta.is_file()
+        except OSError as e:
+            res.ilegibles.append((rel, e.strerror or str(e)))
+            res.archivos_omitidos += 1
+            continue
+        if not es_archivo:
+            # Un enlace roto o un archivo borrado del disco NO son
+            # ilegibles: no hay nada que mirar, y eso es normal. Sólo
+            # cuenta el impedimento del entorno: un directorio del camino
+            # que niega el paso.
+            if _existe_pero_no_se_alcanza(ruta):
+                res.ilegibles.append((rel, "no se pudo alcanzar la ruta"))
             res.archivos_omitidos += 1
             continue
         revisable, motivo = es_revisable(ruta)
@@ -433,6 +472,10 @@ def revisar(
             res.archivos_omitidos += 1
             if "tope" in motivo:
                 res.omitidos_grandes.append((rel, motivo))
+            elif motivo == "ilegible":
+                # `es_revisable` ya calculaba este motivo al fallar el
+                # stat, y `revisar` lo tiraba: sólo miraba «tope».
+                res.ilegibles.append((rel, "no se pudo leer su tamaño"))
             continue
         try:
             texto = leer(ruta)

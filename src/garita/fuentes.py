@@ -46,7 +46,7 @@ class FuenteInvalida(Exception):
 def _de_python(ruta: Path, constante: str) -> list[str]:
     """Extrae una constante literal de un archivo Python, sin ejecutarlo."""
     try:
-        arbol = ast.parse(ruta.read_text(encoding="utf-8"))
+        arbol = ast.parse(ruta.read_text(encoding="utf-8-sig"))
     except (OSError, SyntaxError) as e:
         raise FuenteInvalida(f"no pude leer {ruta}: {e}") from e
 
@@ -80,7 +80,7 @@ def _de_python(ruta: Path, constante: str) -> list[str]:
 
 def _de_json(ruta: Path, llave: str) -> list[str]:
     try:
-        datos = json.loads(ruta.read_text(encoding="utf-8"))
+        datos = json.loads(ruta.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as e:
         raise FuenteInvalida(f"no pude leer {ruta}: {e}") from e
     actual = datos
@@ -94,7 +94,7 @@ def _de_json(ruta: Path, llave: str) -> list[str]:
 def _de_texto(ruta: Path) -> list[str]:
     """Un nombre por línea. `#` comenta."""
     try:
-        lineas = ruta.read_text(encoding="utf-8").splitlines()
+        lineas = ruta.read_text(encoding="utf-8-sig").splitlines()
     except OSError as e:
         raise FuenteInvalida(f"no pude leer {ruta}: {e}") from e
     return _normalizar(

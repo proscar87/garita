@@ -389,6 +389,26 @@ class LoQueElMotorNoLeia(unittest.TestCase):
             self.assertEqual(codigo, 1, salida)
             self.assertIn("cedula_ec", salida)
 
+    def test_la_codificacion_se_decide_por_byte_no_por_archivo(self):
+        # Tercera versión de esto, y la primera que sirve a las DOS
+        # direcciones: v0.17.0 leía el archivo entero como cp1252 y un
+        # byte Latin-1 arruinaba los acentos del UTF-8 mayoritario;
+        # v0.20.2 lo invirtió y un carácter UTF-8 arruinaba los del padrón
+        # Latin-1. Los archivos mezclados existen —un export de Excel al
+        # que alguien le pegó una línea— y no hay que elegir.
+        from garita.nucleo import descifrar
+        cedula = "Cédula: 1710034065\n"
+        casos = {
+            "latin-1 puro": cedula.encode("latin-1"),
+            "latin-1 con una línea utf-8":
+                cedula.encode("latin-1") + "Observación\n".encode("utf-8"),
+            "utf-8 con un byte latin-1":
+                "Reporte de a".encode("utf-8") + b"\xf1"
+                + ("o\n" + cedula).encode("utf-8"),
+        }
+        for nombre, crudo in casos.items():
+            self.assertIn("Cédula", descifrar(crudo), nombre)
+
     def test_un_byte_suelto_no_manda_el_archivo_entero_a_cp1252(self):
         # El reintento de v0.17.0 era por ARCHIVO: una ñ Latin-1 pegada
         # en un export mezclado convertía «Cédula» (UTF-8) en «CÃ©dula» y
@@ -687,7 +707,12 @@ class LoQueNoSePudoMirar(unittest.TestCase):
     CLABE = "002180000645829179"
 
     @unittest.skipIf(os.name == "nt", "los permisos POSIX no aplican")
-    @unittest.skipIf(os.geteuid() == 0, "root lee todo")
+    # getattr y no os.geteuid(): en Windows esa función NO EXISTE, el
+    # decorador se evalúa al crear la clase y el AttributeError tumbaba el
+    # módulo entero — el job de Windows corría 0 de 248 pruebas y nadie lo
+    # notó, porque «0 pruebas» y «todo verde» se parecen demasiado.
+    @unittest.skipIf(getattr(os, "geteuid", lambda: 1)() == 0,
+                     "root lee todo")
     def test_un_archivo_ilegible_no_se_cuenta_como_binario(self):
         # Se contaba en «omitidos (binarios o muy grandes)», sin nombrarlo
         # y sin tocar el veredicto: se aprobaba con 0 algo que nadie miró.
@@ -773,16 +798,26 @@ class NoCuelgaElCi(unittest.TestCase):
 
     def test_muchas_coincidencias_en_una_linea_no_son_cuadraticas(self):
         # dentro_de_url copiaba y rastreaba todo el prefijo por cada
-        # coincidencia.
+        # coincidencia. Se mide la FORMA, no el reloj: un umbral absoluto
+        # reprueba por carga de la máquina y no por regresión, que es una
+        # prueba que miente igual que un guardián que grita.
         import time
         from garita.detectores.paises._comun import dentro_de_url
-        linea = "x" * 400000 + " 002180000645829179"
-        inicio = time.perf_counter()
-        for _ in range(2000):
-            dentro_de_url(linea, len(linea) - 18)
-        transcurrido = time.perf_counter() - inicio
-        self.assertLess(transcurrido, 2.0,
-                        f"tardó {transcurrido:.1f}s en 2000 llamadas")
+
+        def tarda(largo):
+            linea = "x" * largo + " 002180000645829179"
+            inicio = time.perf_counter()
+            for _ in range(300):
+                dentro_de_url(linea, len(linea) - 18)
+            return time.perf_counter() - inicio
+
+        tarda(10_000)                      # calienta
+        corto, largo = tarda(10_000), tarda(400_000)
+        # Cuarenta veces más línea: si fuera cuadrático el cociente se
+        # dispararía. Con el prefijo sin copiar, apenas cambia.
+        self.assertLess(largo, max(corto * 8, 0.5),
+                        f"40× de línea costó {largo / max(corto, 1e-6):.0f}× "
+                        f"de tiempo ({corto:.3f}s → {largo:.3f}s)")
 
 
 class Fuentes(unittest.TestCase):

@@ -59,6 +59,12 @@ def dentro_de_un_numero(linea: str, ini: int, fin: int) -> bool:
     return len(_ES_NUMERO.findall(ventana)) >= 3
 
 
+_SEPARA_TOKEN = frozenset(" \t'\"<,;|")
+# Una «URL» de más de dos mil caracteres pegados no es una URL: es un
+# volcado. El tope evita que una línea minificada se recorra entera.
+_TOKEN_MAXIMO = 2048
+
+
 def dentro_de_url(linea: str, ini: int) -> bool:
     """¿La coincidencia vive dentro de una URL?
 
@@ -74,12 +80,17 @@ def dentro_de_url(linea: str, ini: int) -> bool:
     la CLABE es una COLUMNA APARTE, no parte de la URL, y sin cortar ahí el
     error se degradaba a aviso y el veredicto salía 0 — justo en datos
     raspados, que es donde ese layout es la norma."""
-    # Se busca sobre la línea con límite, sin copiar el prefijo: con
-    # `linea[:ini]` cada coincidencia copiaba y rastreaba todo lo anterior,
-    # y una línea larga con muchos hallazgos salía cuadrática.
-    corte = max(linea.rfind(c, 0, ini)
-                for c in (" ", "\t", "'", '"', "<", ",", ";", "|"))
-    token = linea[corte + 1:ini]
+    # Se camina hacia atrás desde la coincidencia hasta el primer
+    # separador, con tope. Las dos versiones anteriores recorrían todo el
+    # prefijo de la línea en cada coincidencia —primero copiándolo, luego
+    # con siete `rfind` que, al no encontrar su carácter, lo barrían
+    # entero—, así que una línea larga con muchos hallazgos seguía
+    # costando O(n) por hallazgo. Ahora cuesta lo que mida el token.
+    inicio = ini
+    tope = max(0, ini - _TOKEN_MAXIMO)
+    while inicio > tope and linea[inicio - 1] not in _SEPARA_TOKEN:
+        inicio -= 1
+    token = linea[inicio:ini]
     return "://" in token or token.startswith("www.")
 
 
