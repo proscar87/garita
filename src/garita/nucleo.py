@@ -292,17 +292,26 @@ def leer(ruta: Path) -> str | None:
 # ── Exenciones ─────────────────────────────────────────────────────────────
 
 def casa_ruta(archivo: str, patron: str) -> bool:
-    """fnmatch POR SEGMENTOS: el `*` no cruza las barras, el `**` sí.
+    """Como .gitignore: sin barra casa el NOMBRE a cualquier profundidad;
+    con barra casa la RUTA por segmentos, donde `*` no cruza «/» y `**` sí.
 
     Con `fnmatch` a secas, un patrón escrito pensando en la carpeta
     `tests/` absorbía además `tests_reales/` y `tests_viejos.tar` — y
     `tests_reales/` no es ruta de prueba, así que ahí los hallazgos eran
     de verdad. Peor: la absorción era muda, porque el patrón sí coincidía
-    y no salía como exención muerta.
+    y no salía como exención muerta. Con esto «tests*» no casa nada y
+    aparece en el reporte como exención que no aplicó: quien la escribió
+    se entera de que quería «tests/**».
 
-    Ahora «tests*» no casa nada y aparece en el reporte como exención que
-    no aplicó: quien la escribió se entera de que quería «tests/**».
+    Pero la primera versión de este arreglo ancló TODO patrón a la raíz, y
+    eso rompió `*.test.ts` —la forma en que medio mundo exenta sus
+    vectores de prueba— en cada repo que lo usaba. La regla de gitignore
+    es la que la gente ya tiene en la cabeza, y distingue los dos casos
+    sin sorprender a nadie.
     """
+    if "/" not in patron:
+        return fnmatch.fnmatch(archivo.rsplit("/", 1)[-1], patron)
+
     partes_a = archivo.split("/")
     partes_p = patron.split("/")
 

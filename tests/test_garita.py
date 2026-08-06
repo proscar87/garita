@@ -1821,6 +1821,7 @@ class LasViasDeCallar(unittest.TestCase):
             self.assertIn("nada nuevo", salida)
 
     def test_el_asterisco_de_la_exencion_no_cruza_las_barras(self):
+        # Con barra en el patrón, la ruta casa por segmentos.
         from garita.nucleo import casa_ruta
         self.assertFalse(casa_ruta("tests_reales/datos.txt", "tests*"))
         self.assertFalse(casa_ruta("tests/algo.txt", "tests*"))
@@ -1831,7 +1832,19 @@ class LasViasDeCallar(unittest.TestCase):
         self.assertTrue(casa_ruta("docs/IDENTIFICADORES.md",
                                   "docs/IDENTIFICADORES.md"))
         self.assertTrue(casa_ruta("src/a/b.py", "**/b.py"))
-        self.assertFalse(casa_ruta("src/a/b.py", "*.py"))
+        self.assertFalse(casa_ruta("src/hondo/b.py", "src/*.py"))
+
+    def test_un_patron_sin_barra_casa_a_cualquier_profundidad(self):
+        # La regla de .gitignore, que es la que la gente ya tiene en la
+        # cabeza. Anclar TODO patrón a la raíz rompió «*.test.ts» —la
+        # forma en que medio mundo exenta sus vectores— en cada repo que
+        # lo usaba.
+        from garita.nucleo import casa_ruta
+        for archivo in ("x.test.ts", "src/lib/validation/ids.test.ts",
+                        "a/b/c/d.test.ts"):
+            self.assertTrue(casa_ruta(archivo, "*.test.ts"), archivo)
+        self.assertTrue(casa_ruta("sub/dir/README.md", "README.md"))
+        self.assertFalse(casa_ruta("src/a/notas.md", "*.test.ts"))
 
     def test_exencion_que_ya_no_casa_se_reporta_muerta(self):
         # Falla ruidosa en vez de absorción silenciosa: quien escribió
