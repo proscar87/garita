@@ -341,6 +341,13 @@ def imprimir_historial(res, salida=None, sin_color=False) -> None:
                   f"desde el commit {hh.commit} ({hh.fecha}) · línea {h.linea}"
                   f"{duracion}  {n(h.detector, 'negrita')}  {h.que}",
                   file=salida)
+            # El mismo blob pudo vivir en varias rutas, y la que se nombra
+            # arriba es la de ORIGEN — que puede ser la inocente. Decir las
+            # demás evita cerrar el reporte creyendo que era un fixture.
+            otras = getattr(hh, "otras_rutas", ())
+            if otras:
+                print(f"      {n('también en: ' + ', '.join(_ruta(r) for r in otras[:5]), 'gris')}",
+                      file=salida)
             print(f"      {n(h.por_que, 'gris')}", file=salida)
 
     if muertos:

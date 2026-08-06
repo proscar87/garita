@@ -96,8 +96,15 @@ PATRONES: list[tuple[str, re.Pattern[str], str, str]] = [
         # archivo de ejemplo "de momento". El usuario puede ser VACÍO:
         # `redis://:contraseña@host` es la forma normal de redis y memcached,
         # y exigir usuario la dejaba pasar limpia.
+        # El esquema va ACOTADO a 15 caracteres. Sin cota, una tirada larga
+        # de minúsculas con puntos —un archivo minificado— hacía retroceder
+        # el motor desde cada posición buscando un «://» que no llega:
+        # 120 KB en una línea tardaban 21 segundos, y un guardián que cuelga
+        # el CI se desinstala igual que uno que grita. El esquema más largo
+        # que existe cabe de sobra.
         re.compile(
-            r"\b[a-z][a-z0-9+.-]*://[^/\s:@]*:(?P<secreto>[^/\s:@]{6,})@[^\s/]+",
+            r"\b[a-z][a-z0-9+.-]{0,15}://"
+            r"[^/\s:@]*:(?P<secreto>[^/\s:@]{6,})@[^\s/]+",
             re.IGNORECASE,
         ),
         "Una cadena de conexión con contraseña embebida. Suele acabar en un "

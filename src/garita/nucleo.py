@@ -447,12 +447,17 @@ def revisar(
             continue
         res.archivos_revisados += 1
 
-        for e in exen:
-            if casa_ruta(rel, e.patron):
-                patrones_vistos.add(e.patron)
+        # Las exenciones cuyo PATRÓN casa este archivo se calculan UNA vez:
+        # `cubre()` rehacía el casamiento de ruta por cada detector, así que
+        # media docena de exenciones duplicaba el tiempo de escaneo.
+        aplican = [e for e in exen if casa_ruta(rel, e.patron)]
+        for e in aplican:
+            patrones_vistos.add(e.patron)
 
         for det in dets:
-            cubierto = next((e for e in exen if e.cubre(rel, det.nombre)), None)
+            cubierto = next(
+                (e for e in aplican
+                 if not e.detectores or det.nombre in e.detectores), None)
             if cubierto is not None:
                 res.exentos_aplicados[cubierto.patron] = (
                     res.exentos_aplicados.get(cubierto.patron, 0) + 1
@@ -465,7 +470,8 @@ def revisar(
                 # nada y tampoco salía como exención muerta — la peor
                 # combinación, porque quien la escribió cree que aplicó.
                 por_etiqueta = next(
-                    (e for e in exen if e.cubre(rel, h.detector)), None)
+                    (e for e in aplican
+                     if not e.detectores or h.detector in e.detectores), None)
                 if por_etiqueta is not None:
                     res.exentos_aplicados[por_etiqueta.patron] = (
                         res.exentos_aplicados.get(por_etiqueta.patron, 0) + 1

@@ -144,7 +144,7 @@ v0.13.0–v0.16.0 (20 de 20) y v0.17.0–v0.20.1 (23 de 23).
   truena con traceback y sale 1** — `cli.py:450`. La misma clase que
   `_escribir_documento` cerró para `--salida`, sin aplicar aquí.
 
-- [ ] **`--historial` reporta el hallazgo en la ruta de ORIGEN aunque ahí la
+- [x] **`--historial` reporta el hallazgo en la ruta de ORIGEN aunque ahí la
   propia regla lo suprima; la ruta real nunca se nombra** —
   `historial.py:396`.
 
@@ -177,19 +177,21 @@ v0.13.0–v0.16.0 (20 de 20) y v0.17.0–v0.20.1 (23 de 23).
 
 ### Rendimiento
 
-- [ ] **`dentro_de_url` es cuadrático: copia y rastrea todo el prefijo de la
+- [x] **`dentro_de_url` es cuadrático: copia y rastrea todo el prefijo de la
   línea por cada coincidencia** — `_comun.py:77`. Medido: 2 MB en una sola
   línea, 76 segundos. Un guardián que cuelga el CI se desinstala igual que
   uno que grita.
 
-- [ ] **`credencial_en_url`: el esquema sin cota vuelve cuadrática cualquier
+- [x] **`credencial_en_url`: el esquema sin cota vuelve cuadrática cualquier
   tirada larga de minúsculas con puntos** — `secretos.py:100`.
 
-- [ ] **`e.cubre` recalcula `casa_ruta` una vez por detector** —
+- [x] **`e.cubre` recalcula `casa_ruta` una vez por detector** —
   `nucleo.py:412`. Seis exenciones duplican el tiempo de escaneo.
 
-- [ ] **El buscador de país corre la búsqueda de contexto en TODA línea antes
-  de saber si hay candidato** — `_comun.py:144`.
+- [~] **El buscador de país corre la búsqueda de contexto en TODA línea antes
+  de saber si hay candidato** — `_comun.py:144`. **Refutado por medición**:
+  20 000 líneas sin candidatos tardan 0.06 s. La forma es mejorable; el
+  impacto no existe, y adelantar el `finditer` complicaría el flujo por nada.
 
 ---
 
@@ -213,4 +215,4 @@ v0.13.0–v0.16.0 (20 de 20) y v0.17.0–v0.20.1 (23 de 23).
 | v0.21.0 ✓ | El contrato y el parser | `config` vacío, el clon somero, y los plausibles de veredicto que sobrevivan |
 | ~~v0.22.0~~ | — | Entró completo en v0.21.0 |
 | v0.22.0 ✓ | Lo que no se pudo mirar | El archivo ilegible, el posesivo con calificativo, exentar por la etiqueta impresa |
-| continuo | Rendimiento | Los cuatro cuadráticos, con números antes y después |
+| v0.23.0 ✓ | Que no cuelgue el CI | El esquema acotado (21 s → 0.01 s), el prefijo sin copiar, las exenciones calculadas una vez |

@@ -74,11 +74,12 @@ def dentro_de_url(linea: str, ini: int) -> bool:
     la CLABE es una COLUMNA APARTE, no parte de la URL, y sin cortar ahí el
     error se degradaba a aviso y el veredicto salía 0 — justo en datos
     raspados, que es donde ese layout es la norma."""
-    pedazo = linea[:ini]
-    corte = max(pedazo.rfind(" "), pedazo.rfind("\t"),
-                pedazo.rfind("'"), pedazo.rfind('"'), pedazo.rfind("<"),
-                pedazo.rfind(","), pedazo.rfind(";"), pedazo.rfind("|"))
-    token = pedazo[corte + 1:]
+    # Se busca sobre la línea con límite, sin copiar el prefijo: con
+    # `linea[:ini]` cada coincidencia copiaba y rastreaba todo lo anterior,
+    # y una línea larga con muchos hallazgos salía cuadrática.
+    corte = max(linea.rfind(c, 0, ini)
+                for c in (" ", "\t", "'", '"', "<", ",", ";", "|"))
+    token = linea[corte + 1:ini]
     return "://" in token or token.startswith("www.")
 
 

@@ -748,6 +748,43 @@ class LoQueNoSePudoMirar(unittest.TestCase):
             self.assertFalse(es_marcador(v), v)
 
 
+class NoCuelgaElCi(unittest.TestCase):
+    """v0.23.0: un guardián que cuelga el build se desinstala igual que
+    uno que grita. Los tiempos se miden, no se opinan."""
+
+    def test_una_linea_minificada_no_dispara_el_retroceso(self):
+        # El esquema sin cota hacía retroceder el motor desde cada
+        # posición de una tirada de minúsculas con puntos: 117 KB en una
+        # línea tardaban 21 segundos.
+        import time
+        linea = "a." * 60000
+        inicio = time.perf_counter()
+        list(buscar(linea, "x"))
+        transcurrido = time.perf_counter() - inicio
+        self.assertLess(transcurrido, 2.0,
+                        f"tardó {transcurrido:.1f}s en 117 KB de una línea")
+
+    def test_los_esquemas_de_verdad_siguen_casando(self):
+        for u in ("postgres://admin:Kx9mPqR2vNw8@db.interno:5432/prod",
+                  "redis://:Kx9mPqR2vNw8@cache.interno:6379",
+                  "mongodb+srv://u:Kx9mPqR2vNw8@cluster0.invalido/db",
+                  "amqps://user:Kx9mPqR2vNw8@rabbit.interno:5671"):
+            self.assertTrue(list(buscar(u, "x")), u[:24])
+
+    def test_muchas_coincidencias_en_una_linea_no_son_cuadraticas(self):
+        # dentro_de_url copiaba y rastreaba todo el prefijo por cada
+        # coincidencia.
+        import time
+        from garita.detectores.paises._comun import dentro_de_url
+        linea = "x" * 400000 + " 002180000645829179"
+        inicio = time.perf_counter()
+        for _ in range(2000):
+            dentro_de_url(linea, len(linea) - 18)
+        transcurrido = time.perf_counter() - inicio
+        self.assertLess(transcurrido, 2.0,
+                        f"tardó {transcurrido:.1f}s en 2000 llamadas")
+
+
 class Fuentes(unittest.TestCase):
     def cargar(self, contenido: str, spec: str = "gen.py:PROHIBIDOS"):
         with TemporaryDirectory() as d:
@@ -2292,6 +2329,30 @@ class AlcanceDelHistorial(unittest.TestCase):
             codigo, salida = correr_garita(raiz, "--historial")
             # Una sola ruta, la de pruebas: lo criptográfico se relaja.
             self.assertEqual(codigo, 0, salida)
+
+    def test_el_reporte_nombra_las_otras_rutas_del_blob(self):
+        # El reporte nombra la ruta de ORIGEN, que es la que hay que
+        # buscar en el historial — pero ésa puede ser la inocente: una
+        # llave nacida en tests/fixture.pem y hoy viva en src/secreto.pem
+        # se reportaba con el nombre del fixture, el que invita a cerrar
+        # el reporte sin mirar.
+        with TemporaryDirectory() as d:
+            raiz = Path(d)
+            subprocess.run(["git", "init", "-q", "-b", "main"],
+                           cwd=raiz, check=True)
+            (raiz / "tests").mkdir()
+            (raiz / "src").mkdir()
+            (raiz / "tests/fixture.pem").write_text(
+                "-----BEGIN RSA PRIVATE KEY-----\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            self._commit(raiz, "nace en tests")
+            subprocess.run(["git", "mv", "tests/fixture.pem",
+                            "src/secreto.pem"], cwd=raiz, check=True)
+            self._commit(raiz, "promovida a src")
+            codigo, salida = correr_garita(raiz, "--historial")
+        self.assertEqual(codigo, 1, salida)
+        self.assertIn("tests/fixture.pem", salida)
+        self.assertIn("src/secreto.pem", salida)
 
     def test_el_origen_es_topologico_no_cronologico(self):
         # `git log` ordena por fecha de committer, que un reloj adelantado

@@ -70,6 +70,12 @@ class HallazgoHistorico:
     """En cuántas versiones del archivo vivió la misma cadena. La misma
     apiKey a través de veinte ediciones del archivo es UN hallazgo que
     duró veinte versiones, no veinte hallazgos."""
+    otras_rutas: tuple[str, ...] = ()
+    """Las demás rutas donde vivió el mismo blob. Se dicen porque el
+    reporte nombra la de ORIGEN —la que hay que buscar en el historial—, y
+    ésa puede ser la inocente: una llave que nació en `tests/fixture.pem`
+    y hoy vive en `src/secreto.pem` se reportaba con el nombre del fixture,
+    que es justo el que invita a cerrar el reporte sin mirar."""
 
 
 @dataclass
@@ -395,6 +401,7 @@ def revisar_historial(
             nuevo = HallazgoHistorico(
                 hallazgo=Hallazgo(**{**h.__dict__, "archivo": ruta_origen}),
                 commit=commit, fecha=fecha, vivo=sha in vivos,
+                otras_rutas=tuple(r for r in blobs[sha] if r != ruta_origen),
             )
             clave = (ruta_origen, h.detector, h.que)
             previo = grupos.get(clave)
