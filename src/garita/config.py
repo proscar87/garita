@@ -88,9 +88,13 @@ class ConfigInvalida(Exception):
 
 def _valor(bruto: str):
     v = bruto.strip().strip('"').strip("'")
-    if v.lower() in ("true", "sí", "si", "yes"):
+    # Los mismos booleanos que acepta YAML 1.1, ni más ni menos. Con la
+    # lista corta, «fallar_en_aviso: off» quedaba como la cadena «off» —
+    # que es verdadera— y reprobaba el build justo cuando se pedía lo
+    # contrario: la clase de sorpresa que enseña a desactivar el paso.
+    if v.lower() in ("true", "sí", "si", "yes", "y", "on", "1"):
         return True
-    if v.lower() in ("false", "no"):
+    if v.lower() in ("false", "no", "n", "off", "0"):
         return False
     return v
 
@@ -145,6 +149,17 @@ def _leer_yaml(texto: str) -> dict:
         if not isinstance(contenedor, dict):
             raise ConfigInvalida(f"línea {n}: clave dentro de una lista sin «- ».")
 
+        # Una clave repetida se DICE. Dos bloques «nombres:» —lo que sale de
+        # fusionar dos configuraciones o de un merge mal resuelto— dejaban
+        # viva sólo la última fuente, y dos «detectores:» revivían lo que el
+        # primero apagó: sin mensaje y sin rastro. Todo lo demás de este
+        # archivo falla ruidoso; esto también.
+        if clave in contenedor:
+            raise ConfigInvalida(
+                f"línea {n}: «{clave}» ya se definió antes. El segundo "
+                f"bloque borraría al primero en silencio: únelos."
+            )
+
         if resto.strip():
             contenedor[clave] = _valor(resto)
         else:
@@ -171,6 +186,36 @@ def _a_mapa(valor):
     return fuera
 
 
+def _fuentes(clave: str, valor) -> list[str]:
+    """Las fuentes de una lista, o error ruidoso.
+
+    El filtro mudo de antes (`isinstance(f, str)`) tiraba en silencio lo que
+    no fuera cadena, y basta el espacio tras los dos puntos —lo que la
+    ortografía YAML pide— para que `- gen.py: PROHIBIDOS` se lea como mapa,
+    se borre, y el detector de nombres deje de correr con código 0. Es la
+    degradación que `fuentes.py` declara inaceptable en tres docstrings: ahí
+    una fuente rota es código 2, y aquí una mal escrita se tragaba entera.
+    """
+    if isinstance(valor, str):
+        valor = [valor]
+    fuera = []
+    for f in valor or []:
+        if isinstance(f, str):
+            fuera.append(f)
+            continue
+        if isinstance(f, dict) and len(f) == 1:
+            k, v = next(iter(f.items()))
+            raise ConfigInvalida(
+                f"«{clave}» tiene una fuente que se leyó como mapa: "
+                f"«{k}: {v}». Quita el espacio tras los dos puntos "
+                f"(«{k}:{v}») para que sea la ruta y el símbolo."
+            )
+        raise ConfigInvalida(
+            f"«{clave}» tiene una fuente que no es una cadena: {f!r}."
+        )
+    return fuera
+
+
 def cargar(raiz: Path, nombre: str = NOMBRE_ARCHIVO) -> Config:
     ruta = raiz / nombre
     if not ruta.is_file():
@@ -180,19 +225,26 @@ def cargar(raiz: Path, nombre: str = NOMBRE_ARCHIVO) -> Config:
         return Config(detectores={"nombre": False})
 
     try:
-        datos = _leer_yaml(ruta.read_text(encoding="utf-8"))
+        # utf-8-sig y no utf-8: el BOM sobrevivía dentro del texto y volvía
+        # la PRIMERA clave del archivo en «﻿nombres», que ningún
+        # `datos.get` encuentra. Con `nombres:` arriba —el orden del
+        # ejemplo del README— la lista desaparecía y el detector se apagaba
+        # sin decir nada. Es el default de Notepad, del «UTF-8 with BOM» de
+        # VS Code y de PowerShell; y utf-8-sig lee igual de bien lo que no
+        # trae marca.
+        datos = _leer_yaml(ruta.read_text(encoding="utf-8-sig"))
     except ConfigInvalida as e:
         raise ConfigInvalida(f"{NOMBRE_ARCHIVO}: {e}") from e
+    except (UnicodeDecodeError, OSError) as e:
+        # Una configuración ilegible es error de entorno, no un hallazgo:
+        # antes salía por traceback con código 1, el reservado a «hay algo
+        # que arreglar en el repo».
+        raise ConfigInvalida(
+            f"{NOMBRE_ARCHIVO}: no se pudo leer ({e}). Guárdalo en UTF-8."
+        ) from e
 
-    fuentes = datos.get("nombres", [])
-    if isinstance(fuentes, str):
-        fuentes = [fuentes]
-    fuentes = [f for f in fuentes if isinstance(f, str)]
-
-    fuentes_cli = datos.get("clientes", [])
-    if isinstance(fuentes_cli, str):
-        fuentes_cli = [fuentes_cli]
-    fuentes_cli = [f for f in fuentes_cli if isinstance(f, str)]
+    fuentes = _fuentes("nombres", datos.get("nombres", []))
+    fuentes_cli = _fuentes("clientes", datos.get("clientes", []))
 
     exenciones = []
     for e in datos.get("exenciones", []) or []:

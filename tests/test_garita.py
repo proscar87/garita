@@ -515,6 +515,171 @@ class LaRegresionYLosVeteranos(unittest.TestCase):
         self.assertEqual('pe"a.pem', _descitar('"pe\\"a.pem"'))
 
 
+class ElContratoYElParser(unittest.TestCase):
+    """v0.21.0: la Action y el mini-YAML dejan de adivinar.
+
+    Un input vacío que corría con otra configuración, un fetch que dejaba
+    somero el clon ajeno, y cuatro maneras del parser de leer algo
+    distinto de lo que el archivo decía.
+    """
+
+    def _accion(self):
+        import importlib.util
+        ruta = Path(__file__).resolve().parent.parent / "scripts/ejecutar.py"
+        spec = importlib.util.spec_from_file_location("garita_action", ruta)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_el_input_config_vacio_no_corre_con_otra_cosa(self):
+        # `config: ${{ vars.X }}` sin definir llega como cadena vacía y
+        # Garita corría con la configuración por omisión, aprobando con 0
+        # un repo cuyo padrón estaba a la vista.
+        mod = self._accion()
+        with self.assertRaises(SystemExit) as caso:
+            mod.argumentos({"GARITA_CONFIG": ""})
+        self.assertEqual(2, caso.exception.code)
+        with self.assertRaises(SystemExit):
+            mod.argumentos({"GARITA_CONFIG": "   "})
+        # La ruta de verdad sigue pasándose, y la ausencia total de la
+        # variable (correrlo fuera de la Action) no molesta.
+        self.assertEqual(["--config", "otra.yml"],
+                         mod.argumentos({"GARITA_CONFIG": "otra.yml"}))
+        self.assertEqual([], mod.argumentos({}))
+
+    def test_el_fetch_del_pr_no_vuelve_somero_el_clon(self):
+        # `--depth=1` escribía .git/shallow sobre un clon pedido completo,
+        # destruía el merge-base —así que solo-cambios caía siempre al
+        # escaneo completo— y dejaba roto todo --historial posterior.
+        mod = self._accion()
+
+        def git(cwd, *args):
+            subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                            *args], cwd=cwd, check=True, capture_output=True)
+
+        with TemporaryDirectory() as d:
+            origen = Path(d) / "origen"
+            origen.mkdir()
+            git(origen, "init", "-q", "-b", "main")
+            (origen / "a.txt").write_text("base\n", encoding="utf-8")
+            git(origen, "add", "-A")
+            git(origen, "commit", "-qm", "c1")
+            clon = Path(d) / "clon"
+            subprocess.run(["git", "clone", "-q", f"file://{origen}",
+                            str(clon)], check=True, capture_output=True)
+            # La rama base avanza DESPUÉS del clon: es el caso de todo PR.
+            (origen / "b.txt").write_text("mas\n", encoding="utf-8")
+            git(origen, "add", "-A")
+            git(origen, "commit", "-qm", "c2")
+            git(clon, "checkout", "-qb", "feature")
+            (clon / "propio.txt").write_text("del pr\n", encoding="utf-8")
+            git(clon, "add", "-A")
+            git(clon, "commit", "-qm", "pr")
+
+            antes = os.getcwd()
+            os.chdir(clon)
+            try:
+                archivos = mod.archivos_del_pr({"GITHUB_BASE_REF": "main"})
+            finally:
+                os.chdir(antes)
+            # El clon sigue completo: sin esto, --historial saldría con 2.
+            self.assertFalse((clon / ".git" / "shallow").exists())
+            # Y el diff encuentra el archivo del PR en vez de salir vacío
+            # y caer al escaneo completo.
+            self.assertEqual(["propio.txt"], archivos)
+
+    def test_los_booleanos_de_yaml_valen_todos(self):
+        from garita.config import _valor
+        for v in ("off", "no", "false", "n", "0", "NO", "Off"):
+            self.assertIs(False, _valor(v), v)
+        for v in ("on", "yes", "true", "sí", "y", "1", "ON"):
+            self.assertIs(True, _valor(v), v)
+
+    def test_fallar_en_aviso_apagado_con_off(self):
+        aviso = {"conf.py": 'password = "Kx9mPqR2vNw8LtY4"\n'}
+        td = repo_temporal({**aviso, ".garita.yml": "fallar_en_aviso: off\n"})
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 0, salida)
+        td = repo_temporal({**aviso, ".garita.yml": "fallar_en_aviso: on\n"})
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 1, salida)
+
+    def test_el_bom_no_borra_la_primera_clave(self):
+        # Se leía con utf-8 y el BOM volvía la clave en «﻿nombres»:
+        # la lista de nombres desaparecía y el detector se apagaba mudo.
+        td = repo_temporal({"gen.py": 'PROHIBIDOS = ["Juanito"]\n',
+                            "p.md": "lote 47: Juanito\n"})
+        with td:
+            raiz = Path(td.name)
+            (raiz / ".garita.yml").write_text(
+                "nombres:\n  - gen.py:PROHIBIDOS\n"
+                "exenciones:\n  - archivo: gen.py\n    motivo: es la fuente\n"
+                "    detectores: nombre\n",
+                encoding="utf-8-sig")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz)
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("Juanito", salida)
+
+    def test_una_fuente_mal_escrita_no_se_traga_en_silencio(self):
+        # El espacio tras los dos puntos la volvía un mapa, el filtro la
+        # borraba y el detector de nombres dejaba de correr con código 0.
+        td = repo_temporal({"gen.py": 'PROHIBIDOS = ["Juanito"]\n',
+                            ".garita.yml": "nombres:\n  - gen.py: PROHIBIDOS\n"})
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 2, salida)
+            self.assertIn("se leyó como mapa", salida)
+
+    def test_clave_repetida_es_error_de_configuracion(self):
+        td = repo_temporal({
+            "x.py": "x = 1\n",
+            ".garita.yml": ("nombres:\n  - a.py:A\n"
+                            "nombres:\n  - b.py:B\n"),
+        })
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+            self.assertEqual(codigo, 2, salida)
+            self.assertIn("ya se definió antes", salida)
+
+    def test_configuracion_ilegible_es_codigo_2(self):
+        td = repo_temporal({"x.py": "x = 1\n"})
+        with td:
+            raiz = Path(td.name)
+            (raiz / ".garita.yml").write_bytes(
+                "nombres:\n  - x.py:A\n".encode("utf-16"))
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz)
+            self.assertEqual(codigo, 2, salida)
+
+    def test_linea_base_a_ruta_imposible_es_codigo_2(self):
+        td = repo_temporal({"conf.py": 'url = "postgres://a:Kx9mPqR2vNw8@d/p"\n'})
+        with td:
+            codigo, salida = correr_garita(
+                Path(td.name), "--linea-base",
+                "--linea-base-ruta", "noexiste/base.json")
+            self.assertEqual(codigo, 2, salida)
+
+    def test_congelar_un_repo_limpio_borra_la_base_pagada(self):
+        # Dejarla era un no-op con código 0 sobre el comando que la propia
+        # herramienta manda usar: la base vieja seguía en disco perdonando
+        # lo que llegara después.
+        sucio = {"conf.py": 'url = "postgres://a:Kx9mPqR2vNw8@d/p"\n'}
+        td = repo_temporal(dict(sucio))
+        with td:
+            raiz = Path(td.name)
+            correr_garita(raiz, "--linea-base")
+            base = raiz / ".garita-base.json"
+            self.assertTrue(base.is_file())
+            (raiz / "conf.py").write_text("url = 'ok'\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz, "--linea-base")
+            self.assertEqual(codigo, 0, salida)
+            self.assertFalse(base.is_file(), salida)
+
+
 class Fuentes(unittest.TestCase):
     def cargar(self, contenido: str, spec: str = "gen.py:PROHIBIDOS"):
         with TemporaryDirectory() as d:

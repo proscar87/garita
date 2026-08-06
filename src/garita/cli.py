@@ -324,6 +324,21 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _guardar_linea_base(base, ruta_lb: Path) -> bool:
+    """Escribe la línea base; si no se puede, se DICE y es código 2.
+
+    `--linea-base-ruta` a un directorio inexistente tronaba con traceback y
+    código 1 — el reservado a «hay hallazgos»—, la misma clase que
+    `_escribir_documento` ya cerró para `--salida`."""
+    try:
+        guardar_linea_base(base, ruta_lb)
+        return True
+    except OSError as e:
+        print(f"Garita: no pude escribir la línea base «{ruta_lb}»: "
+              f"{e.strerror or e}.", file=sys.stderr)
+        return False
+
+
 def _escribir_documento(ruta: str, documento: str) -> bool:
     """Escribe el documento pedido; si no se puede, se DICE y es código 2.
 
@@ -443,11 +458,23 @@ def _congelar(args, cfg, detectores, raiz: Path, ruta_lb: Path) -> int:
     if base.total == 0:
         print("Garita: nada que congelar — el repositorio está limpio.")
         if ruta_lb.is_file():
-            print(f"  «{ruta_lb.name}» ya existe y toda su deuda está "
-                  f"pagada: bórralo.")
+            # Se BORRA, no se sugiere borrar. Dejarlo era un no-op con
+            # código 0 sobre el comando que la propia herramienta manda
+            # usar para regenerar: la base vieja seguía en disco
+            # perdonando hallazgos que aparecieran después.
+            try:
+                ruta_lb.unlink()
+            except OSError as e:
+                print(f"Garita: no pude borrar «{ruta_lb}»: "
+                      f"{e.strerror or e}.", file=sys.stderr)
+                return 2
+            print(f"  «{ruta_lb.name}» tenía deuda ya pagada y se borró: "
+                  f"si se quedaba, seguiría perdonando lo que llegue "
+                  f"después.")
         return 0
 
-    guardar_linea_base(base, ruta_lb)
+    if not _guardar_linea_base(base, ruta_lb):
+        return 2
     # El tamaño se dice siempre: alguien tiene que ver cuánto acaba de
     # aceptar.
     print(f"Garita: {base.total} hallazgo{'s' if base.total != 1 else ''} "

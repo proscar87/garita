@@ -34,8 +34,15 @@ def archivos_del_pr(entorno=os.environ) -> list[str]:
     base = entorno.get("GITHUB_BASE_REF")
     if not base:
         return []
-    subprocess.run(["git", "fetch", "--depth=1", "origin", base],
-                   check=False, capture_output=True)
+    # SIN `--depth=1`: eso escribía `.git/shallow` sobre un clon que se pidió
+    # completo, destruía el merge-base —con lo que este diff se quedaba
+    # vacío y `solo-cambios` caía SIEMPRE al escaneo completo— y dejaba el
+    # workspace somero, así que un `--historial` posterior en el mismo job
+    # salía con 2. La refspec explícita actualiza la ref remota sin tocar la
+    # profundidad.
+    subprocess.run(
+        ["git", "fetch", "origin", f"+{base}:refs/remotes/origin/{base}"],
+        check=False, capture_output=True)
     r = subprocess.run(
         ["git", "diff", "-z", "--name-only", "--diff-filter=ACMRT",
          f"origin/{base}...HEAD"],
@@ -48,7 +55,23 @@ def argumentos(entorno=os.environ) -> list[str]:
     argv = []
     # El input `config` de la Action se exportaba y nunca se leía: la opción
     # documentada era inoperante.
-    cfg = entorno.get("GARITA_CONFIG", "").strip()
+    #
+    # Y la cadena VACÍA no es «no lo pidió»: es `config: ${{ vars.X }}` con
+    # la variable sin definir, el descuido ordinario en CI. Tragárselo hacía
+    # correr con la configuración por omisión —sin la lista de nombres, sin
+    # exenciones, sin `paises`— y aprobar con 0 un repo con el padrón a la
+    # vista. La CLI ya rechaza `--config ""` con código 2; aquí no se puede
+    # ser más laxo, porque ésta es la superficie que más se usa.
+    # `action.yml` SIEMPRE exporta la variable, así que ausente significa
+    # «me están corriendo fuera de la Action» y vacía significa «el input
+    # llegó vacío».
+    crudo = entorno.get("GARITA_CONFIG")
+    cfg = (crudo or "").strip()
+    if crudo is not None and not cfg:
+        print("Garita: el input «config» está vacío (¿una variable sin "
+              "definir en el workflow?). No se continúa con otra "
+              "configuración de la que se pidió.", file=sys.stderr)
+        raise SystemExit(2)
     if cfg and cfg != ".garita.yml":
         argv += ["--config", cfg]
     if entorno.get("GARITA_SOLO_CAMBIOS", "").lower() == "true":
