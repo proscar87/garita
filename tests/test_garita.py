@@ -389,6 +389,25 @@ class LoQueElMotorNoLeia(unittest.TestCase):
             self.assertEqual(codigo, 1, salida)
             self.assertIn("cedula_ec", salida)
 
+    def test_un_byte_suelto_no_manda_el_archivo_entero_a_cp1252(self):
+        # El reintento de v0.17.0 era por ARCHIVO: una ñ Latin-1 pegada
+        # en un export mezclado convertía «Cédula» (UTF-8) en «CÃ©dula» y
+        # dejaba ciego a todo detector con contexto acentuado — sobre un
+        # archivo que en su mayoría era UTF-8 correcto.
+        from garita.nucleo import descifrar
+        crudo = ("Reporte del mes de a".encode("utf-8") + b"\xf1"
+                 + "o 2024\nCédula: 1710034065\n".encode("utf-8"))
+        texto = descifrar(crudo)
+        self.assertIn("Cédula", texto)
+        td = repo_temporal({})
+        with td:
+            raiz = Path(td.name)
+            (raiz / "mixto.txt").write_bytes(crudo)
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz)
+            self.assertEqual(codigo, 1, salida)
+            self.assertIn("cedula_ec", salida)
+
     def test_identificador_en_fila_csv_no_se_silencia(self):
         # La coma del CSV se tomaba por punto decimal y la fila entera se
         # descartaba antes de mirar nada más.

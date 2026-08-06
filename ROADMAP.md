@@ -1,246 +1,200 @@
 # Hoja de ruta
 
-Este documento sale de la **tercera oleada** de agentes sobre el propio código
-(2026-08-05, después de cerrar las dos anteriores). Los frentes fueron: los
-arreglos del mismo día (v0.13.0–v0.16.0, *que el remedio no sea peor*), y las
-superficies que ninguna oleada había mirado con adversario — SARIF y HTML, la
-línea base y las exenciones, el núcleo, y la Action con los detectores
-veteranos.
+Este documento sale de la **cuarta oleada** de agentes sobre el propio código
+(2026-08-06). Los frentes se eligieron por la lección de la víspera —una
+regresión propia dejó rojo a un repo consumidor sin que nadie se enterara—:
+los arreglos recién hechos (`v0.16.0..v0.20.1`), el **contrato con quien la
+usa** (lo que prometen el README, `action.yml` y los docs contra lo que el
+código hace), el mini-YAML de `config.py` que ninguna oleada había mirado,
+las **interacciones entre modos** y la robustez con repos feos.
 
-Cada hallazgo de la primera sección fue **reproducido de punta a punta** por un
-verificador adversarial independiente, con instrucciones de refutar también lo
-que resultara ser compromiso deliberado. De diez verificados, diez
-sobrevivieron y uno lo hizo a medias (ver `spec/`). Los de la segunda sección
-quedaron fuera del cupo: traen receta, pero nadie los ha reproducido con
-adversario; **verificar antes de arreglar**.
+Cada hallazgo de la primera sección fue **reproducido de punta a punta** por
+un verificador adversarial independiente, con instrucciones de refutar
+también lo que resultara compromiso deliberado. De diez verificados, **nueve
+sobrevivieron y uno fue refutado**: el rechazo de la línea base en formato 1
+resultó ser decisión documentada, no defecto. Los de la segunda sección traen
+receta pero nadie los ha reproducido con adversario; **verificar antes de
+arreglar**.
 
-La regla para priorizar es la de siempre: *un guardián que aprueba todo es peor
-que ninguno*. Primero los falsos negativos silenciosos, después los veredictos
-que mienten, después la calibración, al final lo cosmético.
+La regla para priorizar es la de siempre: *un guardián que aprueba todo es
+peor que ninguno*. Primero los falsos negativos silenciosos, después los
+veredictos que mienten, después la calibración, al final lo cosmético.
 
-Las dos oleadas anteriores quedaron saldadas: la primera en v0.8.0–v0.12.0
-(16 países), la segunda en v0.13.0–v0.16.0 (20 de 20 hallazgos reales).
+Las tres oleadas anteriores quedaron saldadas: v0.8.0–v0.12.0 (16 países),
+v0.13.0–v0.16.0 (20 de 20) y v0.17.0–v0.20.1 (23 de 23).
 
 ---
 
 ## 1. Confirmado y reproducido
 
-### Lo que el motor no leyó
+### La regresión de la víspera
 
-- [x] **UTF-16 sin BOM se descarta como binario: secretos aprobados en
-  silencio** — `src/garita/nucleo.py:238`. `descifrar()` solo reconoce UTF-16
-  por BOM; sin marca, el archivo está lleno de bytes nulos, cae en `if b"\0"
-  in crudo: return None` y se cuenta como «omitido (binarios o muy grandes)»
-  sin nombrarse. Una AKIA y una cadena `postgres://` en ese archivo salen con
-  0; el mismo contenido con BOM da dos errores. Lo escriben `iconv -t
-  UTF-16LE`, `java.io` con ese charset, `.NET UnicodeEncoding(false,…)` y
-  `bcp -w` de SQL Server — el exportador de padrones, o sea el escenario
-  nuclear de la herramienta. Arreglo verificado: antes de descartar por byte
-  nulo, detectar nulos alternados (>70 % en impares y <10 % en pares → utf-16-le,
-  y el espejo) y decodificar; rechaza tanto bytes aleatorios como un bloque
-  todo-nulos.
+- [x] **Un solo byte no-UTF-8 manda TODO el archivo a cp1252: mojibake que
+  ciega a los detectores con contexto** — `src/garita/nucleo.py:280`. El
+  reintento de v0.17.0 era por ARCHIVO, no por byte: bastaba una ñ Latin-1
+  pegada en un export mezclado para que el archivo entero se leyera como
+  cp1252, y ahí «Cédula» (UTF-8) se volvía «CÃ©dula». Ningún `_CONTEXTO`
+  acentuado casaba, todo detector `exige_contexto` quedaba ciego y el archivo
+  **seguía contando como revisado**. Antes, con `replace`, sólo el byte malo
+  se volvía U+FFFD y los acentos del resto sobrevivían: el remedio contra
+  Latin-1 abrió un falso negativo sobre UTF-8, que es el caso mayoritario.
+  *(Saldado en v0.20.2: sólo se cae a cp1252 cuando el intento UTF-8 no
+  rescata ninguna letra acentuada válida — que es exactamente el Latin-1
+  puro que v0.17.0 quería leer.)*
 
-- [x] **Latin-1/CP1252 con acentos mata las palabras de contexto** —
-  `src/garita/nucleo.py:240`. Todo lo no-BOM se decodifica como UTF-8 con
-  `replace`, así que en un archivo Latin-1 «Cédula» se vuelve «C�dula» y
-  ningún `_CONTEXTO` con `c[eé]dula` casa. Cada detector `exige_contexto`
-  (cedula_ec, cedula_do, NIT gt, RUC py, SSN, SIN ca) queda ciego, y el
-  archivo **cuenta como revisado** — peor que omitirlo, porque el resumen
-  jura que se miró. Es el default histórico de Excel y de los editores
-  Windows en español. Arreglo verificado: UTF-8 estricto y reintento con
-  cp1252 solo si falla (idéntico a hoy para UTF-8 válido).
+### El contrato con quien la usa
 
-- [x] **`dentro_de_un_numero` silencia todo identificador en una fila CSV** —
-  `src/garita/detectores/paises/_comun.py:41,43,46`. Las guardas de borde
-  tratan la coma del CSV como prueba de literal numérico: en
-  `Juan Perez,55,<CLABE>,1234.50` el hallazgo se descarta con `continue` antes
-  de toda otra lógica, y lo mismo le pasa a rut, cpf, cuit y las cédulas —
-  todo lo que pasa por `buscador()`. El CSV es *el* formato donde vive el
-  padrón. La calibración declarada era para notación científica y tablas de
-  constantes, no para separadores de campo. Ojo: arreglar solo los bordes no
-  basta — la ventana de la línea 46 cuenta los puntos internos del propio
-  identificador (`12.345.678` aporta dos pares) y lo silencia por segunda vía.
-  Arreglo verificado (201/201 en verde): coma fuera de los dos bordes, y la
-  ventana contada **excluyendo el span de la coincidencia**.
+- [x] **El README instala el hook fijado en `rev: v0.7.0`** — `README.md:153`
+  y `:525`. El bloque de `.pre-commit-config.yaml` que el propio documento
+  marca como «empieza por aquí» apuntaba trece releases atrás: sin los tres
+  países nuevos, sin la lectura de UTF-16 sin BOM ni de Latin-1, sin el
+  arreglo del CSV. La capa que el README declara más importante —bloquear
+  antes del commit— quedaba anclada a la versión ciega. *(Saldado en v0.20.2
+  en las dos secciones, es/en; el bump entra al ritual de release.)*
 
-- [x] **`spec|specs` en `RUTAS_DE_PRUEBA` suprime credenciales de contratos
-  OpenAPI** — `src/garita/nucleo.py:81`. El directorio `spec/` de un contrato
-  OpenAPI o JSON-Schema es un documento que se **escribe**, no un fixture que
-  se genera: una URL de conexión real en `spec/openapi.yaml` se suprime a
-  `None` —ni aviso— y el repo sale 0. Es el mismo argumento con que v0.8.0
-  sacó `examples/` de la supresión. *(Refutado a medias: el verificador
-  refutó el otro extremo del hallazgo —que suprimir secretos en `tests/` sea
-  un defecto— porque el comentario de `nucleo.py:71-78` y el commit de v0.8.0
-  lo documentan como decisión, «un fixture se genera; un ejemplo se
-  ESCRIBE».)* Arreglo: quitar `spec|specs` de `RUTAS_DE_PRUEBA` —
-  `ARCHIVOS_DE_PRUEBA` ya cubre `foo_spec.rb` y `foo.spec.ts`, y
-  `spec/fixtures/` sigue casando por `fixtures?` — o degradarlo a aviso.
+- [ ] **El input `config` vacío se descarta en silencio y Garita aprueba con
+  la configuración por omisión** — `scripts/ejecutar.py:51`. Con
+  `config: ${{ vars.X }}` sin definir —el caso ordinario en CI— no se pasa
+  `--config` y la CLI corre con lo que haya por omisión. Si el `.garita.yml`
+  no vive en la raíz (justo el motivo para usar el input), no hay
+  configuración: el detector `nombre` queda apagado, las exenciones y
+  `paises` se ignoran, y el veredicto es 0 sobre un repo con el padrón a la
+  vista. La CLI ya rechaza `--config ""` con código 2 desde v0.20.0 —«correr
+  con otra configuración de la que se pidió es peor que no correr»—; el
+  envoltorio de la Action, que es la superficie más usada, salta esa guardia.
 
-### Las vías de callar
+- [ ] **`solo-cambios` vuelve somero el clon del consumidor y se queda sin
+  base de comparación** — `scripts/ejecutar.py:37`. El `git fetch --depth=1`
+  escribe `.git/shallow` en un clon que se pidió con `fetch-depth: 0` y
+  destruye el merge-base, así que `git diff origin/base...HEAD` falla, la
+  lista sale vacía y `solo-cambios` cae SIEMPRE al escaneo completo en cuanto
+  la rama base avanza — o sea, en todo PR normal. La entrada documentada
+  («más rápido, pero ciego a lo que ya estaba») es inoperante, y el efecto
+  persiste: un `--historial` posterior en el mismo job sale 2. Arreglo
+  verificado: quitar `--depth=1` y traer la base con refspec explícita.
 
-- [x] **La línea base perdona por conteo sin mirar la severidad: un aviso
-  congelado absuelve un ERROR nuevo** — `src/garita/linea_base.py:104`.
-  `filtrar()` perdona hasta N hallazgos por clave `archivo::detector`, sin
-  severidad y empezando por la línea más baja. Varios detectores emiten aviso
-  o error según contexto (la CLABE dentro de una URL es aviso, a pelo error):
-  si la base congeló un aviso y alguien agrega una CLABE desnuda en una línea
-  anterior, el **error nuevo** se perdona como deuda aceptada, el aviso viejo
-  sale como «nuevo» y con `fallar_en_aviso` apagado —el default— el exit es 0.
-  No es el hueco de sustitución que el docstring acepta: ahí el total no
-  cambia; aquí pasó de 1 a 2. Arreglo: severidad en la clave del conteo
-  (subiendo `FORMATO` a 2, que ya trae mensaje de regenerar); paliativo sin
-  romper formato: consumir los perdones ordenando los avisos primero, que
-  sesga hacia falso positivo y nunca hacia falso negativo.
+### El mini-YAML
 
-- [x] **El `*` de fnmatch cruza «/»: la exención «tests\*» exenta también
-  `tests_reales/`** — `src/garita/nucleo.py:271`. `Exencion.cubre` usa
-  `fnmatch`, donde `*` casa las barras: un patrón escrito pensando en la
-  carpeta `tests/` absorbe `tests_reales/`, `tests_viejos.tar` y todo lo que
-  empiece igual — y `tests_reales/` **no** es ruta de prueba para
-  `RUTAS_DE_PRUEBA`, así que ahí los hallazgos eran de verdad. La absorción es
-  silenciosa: el patrón coincidió, no sale en `exenciones_muertas`, y el
-  reporte solo dice «N revisiones omitidas» sin decir de qué archivos.
-  Arreglo: casar por segmentos (`PurePath.full_match`, donde «tests\*» ya no
-  casa nada y el patrón cae en `exenciones_muertas` — falla ruidosa en vez de
-  absorción silenciosa) y listar qué archivos absorbió cada exención. Es
-  cambio de semántica: anunciarlo.
+- [ ] **Un BOM UTF-8 en `.garita.yml` borra la PRIMERA clave en silencio** —
+  `src/garita/config.py:183`. Se lee con `utf-8` y no `utf-8-sig`, así que el
+  BOM sobrevive y la clave queda como `"﻿nombres"`: ningún `datos.get()`
+  casa con ella. Con `nombres:` primero —el orden del ejemplo del README— la
+  lista de nombres desaparece, el detector se omite sin decir nada y un
+  padrón con nombres reales sale «nada que reportar». El BOM es el default de
+  Notepad, del «UTF-8 with BOM» de VS Code y de PowerShell: el mismo público
+  por el que v0.17.0 arregló Latin-1. Arreglo verificado: una palabra,
+  `encoding="utf-8-sig"`, que también lee bien los archivos sin BOM.
 
-- [x] **`solo-cambios` omite los typechange: un symlink reemplazado por
-  archivo con secreto pasa con 0** — `scripts/ejecutar.py:31`. El
-  `--diff-filter=ACMR` excluye el estado `T`. Si el PR trae además cualquier
-  otro cambio (la lista no queda vacía y no cae al escaneo completo), el
-  archivo nuevo no se revisa: «nada que reportar», exit 0. El docstring
-  justifica la `R` y la exclusión de la `D`, pero nunca menciona la `T`.
-  Arreglo verificado: `--diff-filter=ACMRT`, con su línea de porqué y una
-  prueba que fije el filtro.
+- [ ] **Una fuente de nombres que el parser no entiende se descarta en
+  silencio y el detector desaparece** — `src/garita/config.py:190`. El filtro
+  `isinstance(f, str)` tira sin avisar lo que no sea cadena, y basta el
+  espacio tras los dos puntos —lo que la ortografía YAML pide— para que
+  `- gen.py: PROHIBIDOS` se lea como mapa, se borre, y el detector de nombres
+  deje de correr con código 0. `fuentes.py` declara esto inaceptable en tres
+  docstrings («un guardián ciego que dice OK es peor que no tener guardián»):
+  ahí una fuente rota es código 2. Arreglo: `ConfigInvalida` en vez de filtro
+  mudo.
 
-### Los detectores veteranos
+- [ ] **Clave repetida: el último bloque pisa al primero sin avisar** —
+  `src/garita/config.py:152`. Dos bloques `nombres:` —lo que sale de fusionar
+  dos configuraciones o de un merge mal resuelto— dejan viva sólo la última
+  fuente; dos `detectores:` reviven lo que el primero apagó. Sin mensaje, sin
+  exención muerta, sin más rastro que el conteo de `--explicar`.
 
-- [x] **El teléfono mexicano no admite la lada entre paréntesis** —
-  `src/garita/detectores/paises/mx.py:255`. Ninguna rama de `_TELEFONO`
-  acepta `(` o `)`, así que la forma impresa más común del país —la lada entre
-  paréntesis, con o sin el +52 delante— no produce ni un aviso, mientras la
-  misma línea con guiones sí es error. Es el formato de directorios, firmas de
-  correo y volcados de CRM, y ninguna prueba lo cubría. Arreglo verificado:
-  `\(?` … `\)?` alrededor de la lada en las dos ramas; el resto del pipeline
-  no cambia (los grupos nombrados se conservan y el chequeo `separado` se
-  satisface con el espacio tras el paréntesis).
+### Las interacciones
 
-### La regresión de hoy
+- [ ] **`--linea-base` sobre un repo limpio es un no-op: la base rancia sigue
+  perdonando datos NUEVOS** — `src/garita/cli.py:443`. `_congelar()` retorna
+  0 sin tocar el archivo cuando `base.total == 0`: sólo imprime «bórralo». La
+  base vieja queda en disco con sus conteos, que siguen perdonando hallazgos
+  posteriores del mismo archivo/detector/severidad. El comando de
+  regeneración que la propia herramienta documenta es justo el que no hace
+  nada en ese estado, y sale 0. No es el hueco de SUSTITUCIÓN que el diseño
+  acepta: ahí el total no cambia; aquí los hallazgos vivos pasan de 0 a 2 y
+  se perdonan igual.
 
-- [x] **La frontera camelCase absuelve contraseñas reales
-  «MiClave…»/«MiSecreto…»** — `src/garita/detectores/secretos.py:173`. La
-  frontera minúscula→Mayúscula que v0.13.0 introdujo para los placeholders
-  camelCase, combinada con el marcador `mi[_-]?(clave|llave|secreto)`,
-  convierte «MiClave»/«MiSecreto»/«MiLlave» en **prefijo absolutorio**: el
-  patrón de contraseña humana más común en español. Una URL de conexión con
-  «MiClaveSegura2024» daba error en v0.12.0 y sale limpia en v0.16.0
-  (verificado contra worktree). El marcador estaba pensado para valores que
-  SON el placeholder entero. Arreglo verificado (201/201 en verde): quitar
-  esa alternativa de `MARCADORES` y añadir «llave» a los sustantivos de
-  `_ES_TODO_MARCADOR` — los valores-completos legítimos (miClave, mi_secreto,
-  MiClave, myPassword) siguen absueltos por el prefijo `(m[iy][\W_]?)?` que
-  esa constante ya tiene, y los camel deliberados no se mueven.
+### La robustez
+
+- [ ] **Un archivo ilegible sale como «binario o muy grande» y el repo
+  aprueba con 0** — `src/garita/nucleo.py:403`. `leer()` devuelve `None` ante
+  cualquier `OSError` —permiso denegado, E/S, un archivo que otro paso del
+  runner reemplazó a media corrida— y `revisar()` lo trata como binario: se
+  suma a `archivos_omitidos` sin nombrarlo y sin entrar en
+  `omitidos_grandes`. El reporte remata con «N omitidos (binarios o muy
+  grandes)», que es falso. Es el modo de falla que el docstring de
+  `es_revisable` llama «el peor posible»; esa misma función ya calcula el
+  motivo «ilegible» y también se descarta.
 
 ---
 
 ## 2. Plausible, sin verificar aún
 
-*(Vacía desde v0.20.0: los trece se verificaron uno por uno —cada uno se
-reprodujo antes de tocarse— y los trece resultaron reales. La tercera oleada
-cerró 23 de 23. Quedan abajo con su nota de cierre.)*
+*(Traen receta del buscador; nadie los ha reproducido con adversario.)*
 
 ### Veredictos que podrían mentir
 
-- [x] **`recortar()` vuelca el valor COMPLETO de identificadores de ≤8
-  caracteres** — `_comun.py:73`. Su docstring dice «Nunca el valor completo» y
-  hace lo contrario: una cédula uruguaya pelona o un RUT chileno de 8 dígitos
-  llegan íntegros al `message.text` del SARIF (que la pestaña Security muestra
-  a más gente que el repo) y a la tabla del HTML — cuyo pie **jura** que
-  ningún valor completo aparece. Arreglo: truncar siempre, como
-  `nucleo.recortar()`. El mismo patrón duplicado en `mx.py:285` es rama
-  muerta (los ID mexicanos miden ≥10).
+- [ ] **Un `.garita.yml` en cp1252/UTF-16, o con un booleano donde va una
+  lista, revienta con traceback y código 1** — `cli.py:170`. El 1 es el de
+  «hay hallazgos»: manda a buscar un dato que no existe.
 
-- [x] **`artifactLocation.uri` sin percent-encoding: SARIF inválido** —
-  `sarif.py:76` y `:148`. El esquema 2.1.0 define ese campo como
-  `uri-reference`: un espacio, comillas o `<>` producen un documento que no
-  valida, y un `#` es peor —RFC 3986 lo parte en fragmento y la alerta apunta
-  a un artefacto que no existe. «mi archivo.txt» es cotidiano, no
-  adversarial. Arreglo: `quote(h.archivo, safe='/')`.
+- [ ] **`off`/`0`/`n` no son booleanos: `fallar_en_aviso: off` reprueba el
+  build** — `config.py:93`. YAML los acepta como falso; el mini-parser no.
 
-- [x] **`solo-cambios` no des-quota las rutas C-quoted de git: un archivo con
-  ñ tumba el PR con exit 2** — `scripts/ejecutar.py:34`. `git diff
-  --name-only` cita los nombres no ASCII, la cadena literal llega a la CLI y
-  responde «no existe el archivo» con código 2: un PR legítimo de un repo en
-  español —el público de la herramienta— falla como error de configuración y
-  **ningún** archivo del PR se revisa. La misma clase de bug que v0.15.0 cerró
-  en `historial.py`. Arreglo: `git diff -z --name-only` con split por NUL.
+- [ ] **`--linea-base` con un directorio inexistente en `--linea-base-ruta`
+  truena con traceback y sale 1** — `cli.py:450`. La misma clase que
+  `_escribir_documento` cerró para `--salida`, sin aplicar aquí.
 
-- [x] **La guardia de variable vacía cubre `--salida` pero no `--config` ni
-  `--linea-base-ruta`** — `cli.py:111`. `--config ""` (el `$VAR` sin definir de
-  CI) cae en `if args.config:` y Garita corre con la configuración por
-  omisión, aprobando con 0 — justo lo que la guardia de `--config` inexistente
-  declara inaceptable: «correr con otra configuración de la que se pidió es
-  peor que no correr».
-
-- [x] **`dentro_de_url` no corta en coma: un ID en campo CSV posterior a una
-  URL baja a aviso** — `_comun.py:61`. El token se recorta en espacio, tab y
-  comillas, pero no en coma: en `Juan,https://…/juan,<CLABE>` la CLABE es un
-  campo propio y el token retrocede hasta incluir la URL, así que el error se
-  degrada a aviso y el veredicto es 0. La degradación se justificó para IDs
-  *dentro* de la ruta de una URL; en datos raspados —el caso de uso
-  declarado— convierte un error real en luz verde.
+- [ ] **`--historial` reporta el hallazgo en la ruta de ORIGEN aunque ahí la
+  propia regla lo suprima; la ruta real nunca se nombra** —
+  `historial.py:396`.
 
 ### Calibración
 
-- [x] **`_POSESIVO_ES_TODO` con lista de sustantivos marca «TuClaveAqui» como
-  error** — `secretos.py:143`. La lista cerrada exige que el valor termine
-  justo tras el sustantivo, así que los placeholders con sufijo y sin
-  separador («TuClaveAqui», «tuPasswordAqui», el estilo de las plantillas) ya
-  no se absuelven, y `MARCADORES` tampoco los salva porque ahí `tu` exige
-  separador. Falso positivo en documentación, que es lo que desinstala
-  guardianes. Es el reverso de la regresión de la sección 1: cualquier
-  arreglo debe cerrar los dos.
+- [ ] **`casa_ruta` no poda directorios: «datos/\*» deja de cubrir
+  `datos/regiones/…`** — `nucleo.py:328`. En `.gitignore`, un patrón que casa
+  un directorio excluye su contenido; aquí no. Verificar si conviene: toca la
+  semántica recién estabilizada en v0.20.1, y esa ya se rompió una vez.
 
-- [x] **`detectores:` en forma de lista YAML se convierte con `str()` y la
-  exención deja de exentar, en silencio** — `config.py:213`. `str(dets).split(",")`
-  asume el escalar; con la forma de lista anidada llega una `list` y la tupla
-  queda `("['clabe']",)`, que no casa ningún detector: el archivo exento
-  sigue reportándose y tampoco sale en `exenciones_muertas`. Igual con
-  `detectores: no` (bool). Arreglo: unir la lista, o rechazar con
-  `ConfigInvalida`.
+- [ ] **Cortar el token en la coma rompe las URLs con coma** —
+  `_comun.py:80`. Hay URLs legítimas con comas; ahí el aviso se vuelve error.
 
-- [x] **El NSS no exenta rellenos: el todo-ceros pasa Luhn y dispara error** —
-  `mx.py:339`. `nss_valido("0"*11)` es True y `_buscar_nss` no tiene lista de
-  exentos, a diferencia de sus tres hermanos del mismo archivo (que incluyen
-  un `_clabe_es_relleno` hecho justo para ceros y nueves). La lección de
-  v0.16.0 sin aplicar al detector veterano.
+- [ ] **«your» exigiendo separador deja fuera los marcadores camelCase con
+  calificativo** — `secretos.py:141`. `yourDatabasePassword` se denuncia como
+  credencial real. Sería la cuarta cara del posesivo: cualquier arreglo debe
+  probarse contra las otras tres.
 
-- [x] **`_descitar` ignora los escapes `\a \b \v \f` de git** —
-  `historial.py:145`. El diccionario conoce `\" \\ \t \n \r`, pero el
-  C-quoting de git también emite esos cuatro: la ruta queda con backslash
-  literal, distinta de la cruda que da `rev-list`, y el blob recupera su ruta
-  fantasma — el bug que `_descitar` dice cerrar. Arreglo: cuatro entradas más.
+- [ ] **Exentar por el nombre de detector que el reporte IMPRIME no exenta
+  nada y no avisa** — `nucleo.py:412`. El reporte dice `llave_privada`,
+  `credencial_en_url`, `jwt`; la exención sólo entiende `secretos`. Quien
+  copia lo que ve no consigue nada, y tampoco sale como exención muerta.
 
-- [x] **Un punto final de oración apaga el detector de teléfono** —
-  `mx.py:258`. El lookahead `(?![\d.])` protege de decimales pero también
-  rechazaba el punto que cierra una frase, y el teléfono en prosa —el de un
-  README o un ticket pegado en un docstring— es justo el que se escribe con
-  punto final. Arreglo: `(?!\.?\d)`.
+### Rendimiento
 
-### Cosmético
+- [ ] **`dentro_de_url` es cuadrático: copia y rastrea todo el prefijo de la
+  línea por cada coincidencia** — `_comun.py:77`. Medido: 2 MB en una sola
+  línea, 76 segundos. Un guardián que cuelga el CI se desinstala igual que
+  uno que grita.
 
-- [x] **`first-parent` atribuye el origen al merge cuando el commit lateral
-  tiene fecha posterior** — `historial.py:278`. La sobreescritura confía en
-  que el commit original es más viejo, pero `git log` ordena por fecha de
-  committer: con un reloj adelantado o un rebase que conserva fechas, el merge
-  se emite después y gana. El reporte manda a quien limpia al commit
-  equivocado. Arreglo: quedarse con la fecha mínima, o `--topo-order`.
+- [ ] **`credencial_en_url`: el esquema sin cota vuelve cuadrática cualquier
+  tirada larga de minúsculas con puntos** — `secretos.py:100`.
 
-- [x] **La sección «Deuda pagada» del HTML corta en 10 sin decirlo** —
-  `reporte_html.py:252`. Sus dos hermanas sí avisan «…y N más»; ésta
-  desaparece las entradas 11 en adelante, y quien regenera la línea base
-  guiándose por el HTML cree que la lista está completa.
+- [ ] **`e.cubre` recalcula `casa_ruta` una vez por detector** —
+  `nucleo.py:412`. Seis exenciones duplican el tiempo de escaneo.
+
+- [ ] **El buscador de país corre la búsqueda de contexto en TODA línea antes
+  de saber si hay candidato** — `_comun.py:144`.
+
+---
+
+## Refutado, y por qué
+
+- **«El formato 2 de la línea base deja rojo a todo consumidor»** —
+  `linea_base.py:180`. El síntoma ocurre, pero el rechazo es **deliberado y
+  documentado**: `cargar()` explica que la escribió otra versión y pide
+  regenerarla, porque correr sin la línea base que se pidió daría un reporte
+  inservible. Queda anotado como consecuencia conocida del salto de formato,
+  no como defecto — `mifo` la sufrió el 2026-08-06 y necesita un
+  `garita --linea-base`.
 
 ---
 
@@ -248,7 +202,8 @@ cerró 23 de 23. Quedan abajo con su nota de cierre.)*
 
 | Versión | Tema | Contenido |
 |---------|------|-----------|
-| v0.17.0 ✓ | Lo que el motor no leyó | UTF-16 sin BOM, Latin-1, el CSV de `dentro_de_un_numero`, `spec/`; y los plausibles de `dentro_de_url` que sobrevivan |
-| v0.18.0 ✓ | Las vías de callar | Severidad en la línea base, fnmatch por segmentos, la `T` del diff y las rutas C-quoted de la Action, `detectores:` en lista |
-| v0.19.0 ✓ | La regresión y los veteranos | «MiClave…» y «TuClaveAqui» (las dos caras), el teléfono con paréntesis y con punto final, los rellenos del NSS, los escapes de `_descitar` |
-| v0.20.0 ✓ | Los documentos no mienten | `recortar()` sin valores completos, el `uri` del SARIF, el truncamiento del HTML, `--config ""` |
+| v0.20.2 ✓ | Lo urgente | La regresión de cp1252 y el `rev:` del README |
+| v0.21.0 | El contrato con la Action | `config` vacío, el clon somero, y los plausibles de veredicto que sobrevivan |
+| v0.22.0 | El mini-YAML no adivina | BOM, fuente ilegible, clave repetida, booleanos de YAML, config en otra codificación |
+| v0.23.0 | Lo que se dice de lo que no se revisó | El archivo ilegible, `--linea-base` no-op, la ruta del historial |
+| continuo | Rendimiento | Los cuatro cuadráticos, con números antes y después |

@@ -277,7 +277,18 @@ def descifrar(crudo: bytes) -> str | None:
     try:
         return crudo.decode("utf-8")
     except UnicodeDecodeError:
-        return crudo.decode("cp1252", "replace")
+        pass
+    # No es UTF-8 del todo. Pero caer a cp1252 por el archivo entero
+    # ante UN byte malo —una ñ Latin-1 pegada en un export mezclado—
+    # convertía «Cédula» en «CÃ©dula» y dejaba ciego a todo detector con
+    # contexto acentuado, sobre archivos que en su mayoría eran UTF-8
+    # correcto. Sólo se cambia de codificación cuando el intento UTF-8 no
+    # rescata NINGUNA letra acentuada: ése es el Latin-1 puro que se
+    # quería leer, y no el archivo mezclado.
+    tentativa = crudo.decode("utf-8", "replace")
+    if any(c > "\x7f" and c != "�" for c in tentativa):
+        return tentativa
+    return crudo.decode("cp1252", "replace")
 
 
 def leer(ruta: Path) -> str | None:
