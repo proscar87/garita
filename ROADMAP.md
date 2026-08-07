@@ -67,7 +67,7 @@ v0.13.0–v0.16.0 (20 de 20), v0.17.0–v0.20.1 (23 de 23) y v0.20.2–v0.23.0
 
 ### Evasión: por dónde entra un dato sin que nadie quiera evadir
 
-- [ ] **NFD (acento combinante) ciega a TODO detector con contexto y al de
+- [x] **NFD (acento combinante) ciega a TODO detector con contexto y al de
   nombres** — `nucleo.py:252`. `descifrar()` no normaliza Unicode y ningún
   detector lo hace después: en un archivo NFD —lo que produce macOS al
   copiar nombres de archivo, y varios exportadores— «Cédula» y «José» son
@@ -76,7 +76,7 @@ v0.13.0–v0.16.0 (20 de 20), v0.17.0–v0.20.1 (23 de 23) y v0.20.2–v0.23.0
   quedan **completamente** ciegos y el archivo cuenta como revisado. Arreglo:
   normalizar a NFC en `descifrar()`, un `unicodedata.normalize`.
 
-- [ ] **`nombre`/`cliente` usan `search`: un padrón de una sola línea reporta
+- [x] **`nombre`/`cliente` usan `search`: un padrón de una sola línea reporta
   UN nombre** — `detectores/__init__.py:31`. Un JSON de una línea (`jq -c`,
   una respuesta de API guardada) con cuatrocientos nombres produce **un**
   hallazgo. `secretos` y todos los países usan `finditer` con el comentario
@@ -84,7 +84,7 @@ v0.13.0–v0.16.0 (20 de 20), v0.17.0–v0.20.1 (23 de 23) y v0.20.2–v0.23.0
   no es sólo un conteo bajo: la línea base congela ese `1` y a partir de ahí
   se pueden agregar cientos de nombres sin que el veredicto cambie.
 
-- [ ] **Un secreto sin comillas (.env, .properties, docker-compose) no lo ve
+- [x] **Un secreto sin comillas (.env, .properties, docker-compose) no lo ve
   ningún detector** — `secretos.py:351`. `NOMBRES_SOSPECHOSOS` exige que el
   valor sea un literal entrecomillado, y el razonamiento escrito arriba es
   sobre CÓDIGO. Pero los formatos donde de verdad se filtra una credencial
@@ -95,7 +95,7 @@ v0.13.0–v0.16.0 (20 de 20), v0.17.0–v0.20.1 (23 de 23) y v0.20.2–v0.23.0
   justo el hueco bajo el consejo que la propia herramienta imprime
   («guárdala en un .env ignorado por git»).
 
-- [ ] **Tres decimales cerca borran la CLABE de un CSV de banco** —
+- [x] **Tres decimales cerca borran la CLABE de un CSV de banco** —
   `_comun.py:59`. La ventana antirruido descarta la coincidencia con tres
   pares `dígito[.,]dígito` en 24 caracteres a cada lado: una fila de export
   bancario —cuenta, monto, comisión, IVA— llega a tres sin esfuerzo y la
@@ -190,7 +190,7 @@ v0.13.0–v0.16.0 (20 de 20), v0.17.0–v0.20.1 (23 de 23) y v0.20.2–v0.23.0
 | Versión | Tema | Contenido |
 |---------|------|-----------|
 | v0.23.1 ✓ | Lo urgente | Codificación por byte, el `Ilegible` del directorio, Windows corriendo pruebas otra vez, el BOM de las listas |
-| v0.24.0 | Por dónde entra el dato | NFD, `finditer` en nombres, el secreto sin comillas, la ventana del CSV |
+| v0.24.0 ✓ | Por dónde entra el dato | NFD, `finditer` en nombres, el secreto sin comillas, la ventana del CSV |
 | v0.25.0 | Un solo canal, una sola verdad | Ilegibles en los cuatro canales, exenciones por etiqueta en el historial, los nombres del SARIF y el HTML |
 | v0.26.0 | Que las pruebas no mientan | Vectores negativos por país, la mutación del tamaño, cp1252 en stdout |
 | continuo | Documentos | «El único detector», el Marketplace, la sección inglesa |

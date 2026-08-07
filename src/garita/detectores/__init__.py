@@ -28,13 +28,18 @@ def _detector_de_lista(etiqueta: str, descripcion: str, por_que: str,
     filtra una relación comercial que suele estar bajo confidencialidad."""
     def buscar(texto: str, archivo: str) -> Iterator[Hallazgo]:
         for i, linea in enumerate(texto.splitlines(), 1):
-            m = patron.search(linea)
-            if not m:
-                continue
-            yield Hallazgo(
-                archivo=archivo, linea=i, detector=etiqueta, que=m.group(0),
-                por_que=por_que, como_arreglar=como_arreglar,
-            )
+            # finditer y no search: con `search` un padrón exportado en una
+            # sola línea —un JSON de `jq -c`, una respuesta de API
+            # guardada— reportaba UN nombre de cuatrocientos. Y no era sólo
+            # un conteo bajo: la línea base congela ese 1 y a partir de ahí
+            # se pueden agregar los demás sin que el veredicto cambie. Es
+            # la misma lección que `secretos` y los países ya traían.
+            for m in patron.finditer(linea):
+                yield Hallazgo(
+                    archivo=archivo, linea=i, detector=etiqueta,
+                    que=m.group(0),
+                    por_que=por_que, como_arreglar=como_arreglar,
+                )
     return Detector(nombre=etiqueta, descripcion=descripcion, buscar=buscar)
 
 

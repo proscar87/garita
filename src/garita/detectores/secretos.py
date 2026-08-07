@@ -344,23 +344,63 @@ def buscar(texto: str, archivo: str) -> Iterator[Hallazgo]:
 # llamadas, las referencias a campos y la desestructuración, que es
 # exactamente lo que sobraba.
 NOMBRES_SOSPECHOSOS = re.compile(
-    r"(?i)(?:^|[\s,{(])"
+    r"(?i)(?:^|[\s,{(])(?:[A-Za-z0-9]+[_.-])*"
     r"(pass(?:word|wd)?|secret|token|api[_-]?key|apikey|private[_-]?key"
     r"|service[_-]?role|client[_-]?secret|auth[_-]?token|access[_-]?key)"
     r"\s*[:=]\s*"
     r"([\"'])([A-Za-z0-9_./+=-]{16,})\2"
 )
 
+# El mismo nombre sospechoso, pero con el valor SIN COMILLAS y hasta el fin
+# de la línea. El razonamiento de arriba —exigir comillas para no morder
+# `username, password = get_auth(url)`— está pensado para CÓDIGO; los
+# formatos donde de verdad se filtra una credencial por descuido no usan
+# comillas por convención: .env, .properties, .ini, el bloque
+# `environment:` de un docker-compose, un Secret de Kubernetes en YAML
+# plano. Ahí `DB_PASSWORD=<20 aleatorios>` no lo veía nadie — y es justo el
+# hueco bajo el consejo que esta herramienta imprime: «guárdala en un .env».
+#
+# Para no volver a morder el código, el valor sin comillas tiene que:
+#   · ocupar la línea COMPLETA tras el signo (nada de comas ni paréntesis,
+#     que delatan una llamada o un literal de diccionario), y
+#   · no parecer una referencia (`config.get`, `os.environ[...]`, `$VAR`,
+#     `${VAR}`, `%s`), que es lo que pone ahí quien hizo las cosas bien.
+_ES_REFERENCIA = re.compile(
+    r"(?i)^(\w+[.\[]|%s$|None$|null$|true$|false$)"
+)
+NOMBRES_SOSPECHOSOS_PELON = re.compile(
+    r"(?i)(?:^|[\s])(?:[A-Za-z0-9]+[_.-])*"
+    r"(pass(?:word|wd)?|secret|token|api[_-]?key|apikey|private[_-]?key"
+    r"|service[_-]?role|client[_-]?secret|auth[_-]?token|access[_-]?key)"
+    r"\s*[:=]\s*"
+    r"(?P<valor>[A-Za-z0-9_./+=-]{16,})\s*$"
+)
+
+
+def _asignaciones_de_la_linea(linea: str):
+    """Los pares (nombre, valor) sospechosos: con comillas y sin ellas."""
+    vistos = set()
+    # `finditer`, no `search` — la misma lección que en `buscar`: si la
+    # primera asignación de la línea es un marcador, el `continue` no
+    # debe tragarse la credencial real que viene después.
+    for m in NOMBRES_SOSPECHOSOS.finditer(linea):
+        vistos.add(m.group(3))
+        yield m.group(1), m.group(3)
+    for m in NOMBRES_SOSPECHOSOS_PELON.finditer(linea):
+        if m.group("valor") not in vistos:
+            yield m.group(1), m.group("valor")
+
 
 def buscar_asignaciones(texto: str, archivo: str) -> Iterator[Hallazgo]:
     for i, linea in enumerate(texto.splitlines(), 1):
-        # `finditer`, no `search` — la misma lección que en `buscar`: si la
-        # primera asignación de la línea es un marcador, el `continue` no
-        # debe tragarse la credencial real que viene después.
-        for m in NOMBRES_SOSPECHOSOS.finditer(linea):
-            valor = m.group(3)
+        for nombre, valor in _asignaciones_de_la_linea(linea):
             # Una interpolación no es un secreto: es lo correcto.
             if valor.startswith(("$", "process.env", "os.environ", "env.")):
+                continue
+            # Ni una referencia a otra cosa: `password: config.db_pass`,
+            # `token = settings.TOKEN`. Sin comillas eso es lo normal en
+            # código, y marcarlo enseñaría a ignorar al guardián.
+            if _ES_REFERENCIA.match(valor):
                 continue
             if es_marcador(valor):
                 continue
@@ -368,7 +408,7 @@ def buscar_asignaciones(texto: str, archivo: str) -> Iterator[Hallazgo]:
                 archivo=archivo, linea=i, detector="asignacion_sospechosa",
                 que=recortar(valor), severidad="aviso",
                 por_que=(
-                    f"La variable «{m.group(1)}» está asignada a un valor "
+                    f"La variable «{nombre}» está asignada a un valor "
                     f"literal largo. PUEDE ser una credencial: los formatos "
                     f"de proveedor son sólo una parte de lo que se filtra. "
                     f"Va como aviso porque es una sospecha, no una certeza — "

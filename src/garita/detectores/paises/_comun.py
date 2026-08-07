@@ -34,6 +34,18 @@ SEPARADORES = re.compile(r"[.\-\s/]")
 _ES_NUMERO = re.compile(r"[0-9][.,][0-9]|[eE][+-]?\d|0[xXbBo]")
 
 
+_SEPARA_CAMPO = frozenset(",;\t|")
+
+
+def _es_campo_completo(linea: str, ini: int, fin: int) -> bool:
+    """¿La coincidencia ocupa una celda entera de una fila delimitada?"""
+    antes = linea[:ini].rstrip()
+    despues = linea[fin:].lstrip()
+    izq = not antes or antes[-1] in _SEPARA_CAMPO
+    der = not despues or despues[0] in _SEPARA_CAMPO
+    return izq and der
+
+
 def dentro_de_un_numero(linea: str, ini: int, fin: int) -> bool:
     """¿La coincidencia es parte de un literal numérico más largo?
 
@@ -54,6 +66,15 @@ def dentro_de_un_numero(linea: str, ini: int, fin: int) -> bool:
         return True
     if re.match(r"[eE][+-]?\d|\.\d", der):
         return True
+    # Si la coincidencia es un CAMPO COMPLETO —delimitada por separadores a
+    # los dos lados, o por los bordes de la línea— no vive dentro de ningún
+    # número, y la heurística de tabla no aplica. Sin esto, una fila de
+    # export bancario («cuenta, monto, comisión, IVA») llegaba a las tres
+    # coincidencias de la ventana con sus propios importes y la CLABE
+    # VÁLIDA se descartaba antes de validar nada: el formato en que viaja
+    # un padrón, otra vez.
+    if _es_campo_completo(linea, ini, fin):
+        return False
     # Un contexto lleno de comas y puntos entre dígitos es una tabla numérica.
     ventana = linea[max(0, ini - 24):ini] + " " + linea[fin:fin + 24]
     return len(_ES_NUMERO.findall(ventana)) >= 3

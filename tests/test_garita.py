@@ -442,11 +442,30 @@ class LoQueElMotorNoLeia(unittest.TestCase):
         import re as _re
         from garita.detectores.paises._comun import dentro_de_un_numero
         for linea in ("x = 3.141592653589793e10",
-                      f"0,12, 3,45, 6,78, {self.CLABE}, 9,01",
                       "valor 1.234567890123456789"):
             m = _re.search(r"\d{10,}", linea)
             self.assertTrue(
                 dentro_de_un_numero(linea, m.start(), m.end()), linea)
+
+    def test_una_celda_propia_nunca_vive_dentro_de_un_numero(self):
+        # Cambio deliberado de v0.24.0: si la coincidencia es un CAMPO
+        # completo, la heurística de tabla numérica no aplica. Antes, una
+        # fila de export bancario —cuenta, monto, comisión, IVA— llegaba a
+        # las tres coincidencias de la ventana con sus propios importes y
+        # la CLABE válida se descartaba sin validar nada.
+        #
+        # El costo es una tabla de decimales donde una celda sea, por azar,
+        # un identificador con dígito verificador válido. Entre callar un
+        # padrón y hacer ruido en ese caso, la doctrina elige el ruido.
+        import re as _re
+        from garita.detectores.paises._comun import dentro_de_un_numero
+        for linea in (f"1234567890,{self.CLABE},1500.50,240.08,1740.58",
+                      f"0,12, 3,45, 6,78, {self.CLABE}, 9,01",
+                      f"cuenta\t{self.CLABE}\t9.999,50"):
+            i = linea.index(self.CLABE)
+            self.assertFalse(
+                dentro_de_un_numero(linea, i, i + len(self.CLABE)), linea)
+        del _re
 
     def test_columna_aparte_de_una_url_es_error_no_aviso(self):
         # El token retrocedía hasta la URL de la columna anterior y el
@@ -818,6 +837,73 @@ class NoCuelgaElCi(unittest.TestCase):
         self.assertLess(largo, max(corto * 8, 0.5),
                         f"40× de línea costó {largo / max(corto, 1e-6):.0f}× "
                         f"de tiempo ({corto:.3f}s → {largo:.3f}s)")
+
+
+class PorDondeEntraElDato(unittest.TestCase):
+    """v0.24.0: cuatro vías por las que un dato entraba sin que nadie
+    quisiera evadir nada."""
+
+    def test_nfd_no_ciega_a_los_detectores_con_contexto(self):
+        # macOS y varios exportadores escriben «Cédula» como e + acento
+        # combinante: otra cadena para cada patrón acentuado del proyecto,
+        # y con exige_contexto eso es quedarse ciego del todo.
+        import unicodedata
+        from garita.nucleo import descifrar
+        from garita.config import Config
+        from garita.detectores.paises import ec
+        d = {x.nombre: x for x in ec.detectores(Config())}["cedula_ec"]
+        nfd = unicodedata.normalize("NFD", "Cédula: 1710034065\n")
+        self.assertNotEqual(nfd, "Cédula: 1710034065\n")   # de verdad es NFD
+        self.assertTrue(list(d.buscar(descifrar(nfd.encode()), "x")))
+
+    def test_un_padron_de_una_sola_linea_reporta_todos_los_nombres(self):
+        # Con `search` un JSON de `jq -c` con cuatrocientos nombres
+        # reportaba UNO — y la línea base congelaba ese 1.
+        td = repo_temporal({
+            "gen.py": 'PROHIBIDOS = ["Ana Ruiz", "Beto Lara", "Carla Ortiz"]\n',
+            "padron.json": ('[{"n":"Ana Ruiz"},{"n":"Beto Lara"},'
+                            '{"n":"Carla Ortiz"}]\n'),
+            ".garita.yml": ("nombres:\n  - gen.py:PROHIBIDOS\n"
+                            "exenciones:\n  - archivo: gen.py\n"
+                            "    motivo: es la fuente\n    detectores: nombre\n"),
+        })
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+        self.assertEqual(codigo, 1, salida)
+        self.assertEqual(3, salida.count("  nombre  "), salida)
+
+    def test_secretos_sin_comillas_de_env_y_compose(self):
+        # Los formatos donde de verdad se filtra una credencial por
+        # descuido no usan comillas por convención.
+        from garita.detectores.secretos import buscar_asignaciones
+        for linea in ("DB_PASSWORD=Kx9mPqR2vNw8LtY4Qz3b",
+                      "APP_SECRET=Kx9mPqR2vNw8LtY4Qz3b",
+                      "      POSTGRES_PASSWORD: Kx9mPqR2vNw8LtY4Qz3b",
+                      "app.secret=Kx9mPqR2vNw8LtY4Qz3b",
+                      "spring.datasource.password=Kx9mPqR2vNw8LtY4Qz3b"):
+            self.assertTrue(
+                list(buscar_asignaciones(linea + "\n", ".env")), linea)
+
+    def test_el_codigo_normal_no_se_marca_por_no_llevar_comillas(self):
+        # El motivo por el que las comillas se exigían: no morder código.
+        from garita.detectores.secretos import buscar_asignaciones
+        for linea in ("username, password = get_auth_from_url(proxy)",
+                      "password = config.db_password",
+                      "self.api_key = settings.API_KEY",
+                      'token = os.environ["T"]',
+                      "password: $DB_PASS",
+                      "secret_key = None",
+                      "const password = req.body.password"):
+            self.assertFalse(
+                list(buscar_asignaciones(linea + "\n", "app.py")), linea)
+
+    def test_el_prefijo_largo_no_dispara_retroceso(self):
+        import time
+        from garita.detectores.secretos import buscar_asignaciones
+        linea = "a_" * 20000 + "password=" + "x" * 20
+        inicio = time.perf_counter()
+        list(buscar_asignaciones(linea + "\n", "x"))
+        self.assertLess(time.perf_counter() - inicio, 1.0)
 
 
 class Fuentes(unittest.TestCase):

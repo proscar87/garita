@@ -27,6 +27,7 @@ import os
 import fnmatch
 import re
 import subprocess
+import unicodedata
 import sys
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -294,7 +295,14 @@ def descifrar(crudo: bytes) -> str | None:
     # le pegó una línea desde un editor moderno— y las dos direcciones se
     # pueden servir a la vez: se decodifica UTF-8 y sólo las secuencias
     # inválidas se leen como cp1252.
-    return crudo.decode("utf-8", "garita_cp1252")
+    # NFC al salir. Sin normalizar, un archivo en NFD —«Cédula» con la e y
+    # el acento como caracteres separados, que es lo que produce macOS y
+    # varios exportadores— es OTRA cadena para cada patrón acentuado del
+    # proyecto: los contextos de EC, DO, PT, UY, CO, CL, VE y el del NSS
+    # dejaban de casar, y con `exige_contexto` eso es quedarse ciego del
+    # todo. El detector de nombres tampoco casaba un solo nombre con acento.
+    return unicodedata.normalize(
+        "NFC", crudo.decode("utf-8", "garita_cp1252"))
 
 
 def _existe_pero_no_se_alcanza(ruta: Path) -> bool:
