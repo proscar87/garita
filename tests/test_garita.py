@@ -627,6 +627,15 @@ class ElContratoYElParser(unittest.TestCase):
             # y caer al escaneo completo.
             self.assertEqual(["propio.txt"], archivos)
 
+    def test_lista_vacia_en_linea_es_lista_no_cadena(self):
+        """«exenciones: []» quedaba como la CADENA "[]" y el validador la
+        rechazaba pidiendo archivo y motivo — sobre una lista sin exenciones.
+        Un repo que declara explícitamente «aquí no hay exenciones» es el caso
+        que hay que premiar, y era el único que no compilaba."""
+        from garita.config import _leer_yaml
+        self.assertEqual(_leer_yaml("exenciones: []\n"), {"exenciones": []})
+        self.assertEqual(_leer_yaml("exenciones: {}\n"), {"exenciones": {}})
+
     def test_los_booleanos_de_yaml_valen_todos(self):
         from garita.config import _valor
         for v in ("off", "no", "false", "n", "0", "NO", "Off"):

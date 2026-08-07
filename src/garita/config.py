@@ -88,6 +88,13 @@ class ConfigInvalida(Exception):
 
 def _valor(bruto: str):
     v = bruto.strip().strip('"').strip("'")
+    # Las colecciones vacías en línea. Sin esto, «exenciones: []» quedaba como
+    # la CADENA "[]" y el validador la rechazaba con «cada exención necesita
+    # archivo y motivo» — sobre una lista que no tiene exenciones. Un repo que
+    # declara explícitamente «aquí no hay exenciones» es justo el caso que hay
+    # que premiar, y era el único que no compilaba.
+    if v in ("[]", "{}"):
+        return [] if v == "[]" else {}
     # Los mismos booleanos que acepta YAML 1.1, ni más ni menos. Con la
     # lista corta, «fallar_en_aviso: off» quedaba como la cadena «off» —
     # que es verdadera— y reprobaba el build justo cuando se pedía lo
