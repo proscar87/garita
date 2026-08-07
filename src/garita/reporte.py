@@ -34,6 +34,37 @@ def _en_github() -> bool:
     return os.environ.get("GITHUB_ACTIONS") == "true"
 
 
+def recortes_de_configuracion(cfg) -> list[str]:
+    """Qué apagó la configuración, dicho en voz alta.
+
+    El `.garita.yml` lo trae el repositorio REVISADO, así que en un pull
+    request de un fork lo escribe quien manda el PR: tres líneas apagando
+    los detectores y la salida era «✓ nada que reportar» con código 0, sin
+    mencionar el interruptor. Todo lo demás de esta herramienta se grita
+    —las exenciones muertas, las listas ausentes, lo omitido por tamaño— y
+    el interruptor general era el único mudo.
+    """
+    fuera = []
+    # `nombre` y `cliente` se apagan SOLOS cuando no hay lista que
+    # comparar, y eso ya se dice en su propio lugar: anunciarlo aquí sería
+    # ruido en todo repositorio sin configuración. Lo que interesa es el
+    # interruptor que alguien accionó a mano.
+    automaticos = {
+        "nombre": not getattr(cfg, "fuentes_nombres", None),
+        "cliente": not getattr(cfg, "fuentes_clientes", None),
+    }
+    apagados = sorted(k for k, v in getattr(cfg, "detectores", {}).items()
+                      if not v and not automaticos.get(k))
+    if apagados:
+        fuera.append("detectores apagados por la configuración: "
+                     + ", ".join(apagados))
+    paises = getattr(cfg, "paises", None)
+    if paises:
+        fuera.append("sólo se cargaron los identificadores de: "
+                     + ", ".join(paises))
+    return fuera
+
+
 def _ruta(v: str) -> str:
     """Bajo Actions, stdout es un canal de comandos, no sólo texto.
 
@@ -57,7 +88,7 @@ def _color(activo: bool):
 
 def imprimir(res: Resultado, salida=None, base=None,
              nuevos=None, conocidos=None, pagadas=None,
-             sin_color=False) -> None:
+             sin_color=False, cfg=None) -> None:
     # sys.stdout se resuelve al llamar, no al importar: un default evaluado
     # en el import ignora las redirecciones (contextlib.redirect_stdout).
     salida = salida if salida is not None else sys.stdout
@@ -68,6 +99,9 @@ def imprimir(res: Resultado, salida=None, base=None,
     if nuevos is None:
         nuevos = res.hallazgos
     conocidos = conocidos or []
+
+    for recorte in (recortes_de_configuracion(cfg) if cfg else []):
+        print(n(f"! {recorte}", "amarillo"), file=salida)
 
     # Los archivos que se saltaron por tamaño se dicen SIEMPRE, haya o no
     # hallazgos. Un volcado grande omitido en silencio es una marca verde sin
@@ -266,7 +300,7 @@ def anotaciones_github(res: Resultado, salida=None, conocidos=()) -> None:
 
 
 def resumen_markdown(res: Resultado, base=None, nuevos=None,
-                     conocidos=None) -> str:
+                     conocidos=None, cfg=None) -> str:
     """Para el resumen del job, que es lo que se ve sin abrir los registros."""
     if nuevos is None:
         nuevos = res.hallazgos
@@ -275,10 +309,34 @@ def resumen_markdown(res: Resultado, base=None, nuevos=None,
              f"previo{'s' if len(conocidos) != 1 else ''} en deuda aceptada "
              f"(línea base del {base.creada})." if conocidos else "")
 
+    # Lo que NO se miró va en los dos casos, y antes que nada: un ✅ sobre
+    # un archivo que nadie leyó es la marca verde sin revisión. Hasta aquí
+    # esto sólo salía en la terminal, y quien mira el panel del job —o el
+    # SARIF de la auditoría mensual— creía que se había revisado todo.
+    reservas = []
+    if getattr(res, "ilegibles", None):
+        reservas.append(
+            f"**{len(res.ilegibles)} archivo"
+            f"{'s' if len(res.ilegibles) != 1 else ''} no se "
+            f"pudo{'' if len(res.ilegibles) == 1 else 'ieron'} leer** "
+            f"(permisos o E/S): "
+            + ", ".join(f"`{a}`" for a, _ in res.ilegibles[:5]))
+    if res.omitidos_grandes:
+        reservas.append(
+            f"**{len(res.omitidos_grandes)} sin revisar por tamaño**: "
+            + ", ".join(f"`{a}`" for a, _ in res.omitidos_grandes[:5])
+            + ". Un archivo grande es justo donde cabe un padrón entero.")
+    for recorte in (recortes_de_configuracion(cfg) if cfg else []):
+        reservas.append(f"**Configuración**: {recorte}.")
+    cola = ("\n\n" + "\n\n".join(reservas)) if reservas else ""
+
     if not nuevos:
-        titulo = "Nada nuevo que reportar." if conocidos else "Nada que reportar."
-        return (f"## ✅ Garita\n\n{titulo} "
-                f"{res.archivos_revisados} archivos revisados.{deuda}\n")
+        marca, titulo = "✅", ("Nada nuevo que reportar." if conocidos
+                              else "Nada que reportar.")
+        if reservas:
+            marca, titulo = "⚠️", "Sin hallazgos en lo que se pudo revisar."
+        return (f"## {marca} Garita\n\n{titulo} "
+                f"{res.archivos_revisados} archivos revisados.{deuda}{cola}\n")
 
     lineas = ["## 🚧 Garita", ""]
     e = sum(1 for h in nuevos if h.severidad == "error")
@@ -294,7 +352,7 @@ def resumen_markdown(res: Resultado, base=None, nuevos=None,
         lineas.append(f"| … | | | {len(nuevos) - 50} más |")
     lineas += ["", "Cada hallazgo trae su motivo y su arreglo en el registro "
                "completo de la ejecución."]
-    return "\n".join(lineas) + "\n"
+    return "\n".join(lineas) + cola + "\n"
 
 
 def imprimir_historial(res, salida=None, sin_color=False) -> None:

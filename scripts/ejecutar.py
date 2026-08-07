@@ -77,10 +77,17 @@ def argumentos(entorno=os.environ) -> list[str]:
     if entorno.get("GARITA_SOLO_CAMBIOS", "").lower() == "true":
         cambios = archivos_del_pr(entorno)
         if cambios:
+            # `--` antes de los nombres: sin él, un archivo del PR llamado
+            # «--version» era una BANDERA para argparse. Garita imprimía su
+            # versión y salía con 0 sin mirar un solo archivo — el PR se
+            # aprobaba solo. Con «-h» igual, y con «--sin-linea-base» o
+            # «--formato=sarif» se alteraba el modo. El nombre del archivo
+            # lo controla quien manda el PR.
+            #
             # += y no =: asignar pisaba el --config ya acumulado, y la
             # opción volvía a ser inoperante — ahora sólo en modo
             # solo-cambios, que es más difícil de notar.
-            argv += cambios
+            argv += ["--"] + cambios
         else:
             print("Garita: no pude determinar los archivos del pull request; "
                   "reviso el repositorio completo.")

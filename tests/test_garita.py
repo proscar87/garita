@@ -839,6 +839,47 @@ class NoCuelgaElCi(unittest.TestCase):
                         f"de tiempo ({corto:.3f}s → {largo:.3f}s)")
 
 
+class LosCuatroCanalesDicenLoMismo(unittest.TestCase):
+    """v0.25.0: quien mira un canal cree que vio todo."""
+
+    def test_lo_no_revisado_llega_al_sarif_y_al_resumen(self):
+        # El SARIF es el ÚNICO canal de la auditoría mensual: decía «cero
+        # alertas» sobre un padrón de 2 MB que nadie leyó.
+        from garita.nucleo import Resultado
+        from garita.sarif import generar
+        from garita.reporte import resumen_markdown
+        res = Resultado()
+        res.archivos_revisados = 3
+        res.omitidos_grandes = [("volcado.csv", "pesa 2 MB, más del tope")]
+        res.ilegibles = [("secreta/padron.txt", "Permission denied")]
+        doc = generar(res, [])
+        textos = " ".join(r["message"]["text"] for r in doc["runs"][0]["results"])
+        self.assertIn("volcado.csv",
+                      " ".join(str(r) for r in doc["runs"][0]["results"]))
+        self.assertIn("no se pudo leer", textos.lower())
+        resumen = resumen_markdown(res)
+        self.assertIn("volcado.csv", resumen)
+        self.assertIn("secreta/padron.txt", resumen)
+        self.assertNotIn("## ✅", resumen)
+
+    def test_las_otras_rutas_llegan_al_sarif(self):
+        from garita.historial import HallazgoHistorico
+        from garita.nucleo import Hallazgo
+        from garita.sarif import generar_historial
+
+        class Res:
+            hallazgos = [HallazgoHistorico(
+                hallazgo=Hallazgo(archivo="tests/fixture.pem", linea=1,
+                                  detector="llave_privada", que="----…----",
+                                  por_que="x", como_arreglar="y"),
+                commit="abc1234567", fecha="2026-08-07", vivo=True,
+                otras_rutas=("src/secreto.pem",))]
+
+        doc = generar_historial(Res(), [])
+        texto = doc["runs"][0]["results"][0]["message"]["text"]
+        self.assertIn("src/secreto.pem", texto)
+
+
 class PorDondeEntraElDato(unittest.TestCase):
     """v0.24.0: cuatro vías por las que un dato entraba sin que nadie
     quisiera evadir nada."""
@@ -883,6 +924,35 @@ class PorDondeEntraElDato(unittest.TestCase):
                       "spring.datasource.password=Kx9mPqR2vNw8LtY4Qz3b"):
             self.assertTrue(
                 list(buscar_asignaciones(linea + "\n", ".env")), linea)
+
+    def test_el_valor_entrecomillado_con_prefijo_punteado_se_reporta(self):
+        # Regresión de v0.24.0: el filtro de «referencia» estaba pensado
+        # para el valor SIN comillas y quedó en el bucle común, así que
+        # mató las credenciales de prefijo punteado —«hvs.» de Vault,
+        # «dp.st.» de Doppler, «cs.live.»— que v0.23.0 sí reportaba.
+        from garita.detectores.secretos import buscar_asignaciones
+        for linea in ('api_key = "prod.a8Kd93jfKd93jfLs02mZ"',
+                      'client_secret: "cs.live.9f8a7b6c5d4e3f2a1b0c"',
+                      'token = "hvs.CAESIJm4Kd93jfKd93jfLs02mZq"'):
+            self.assertTrue(
+                list(buscar_asignaciones(linea + "\n", "config.py")), linea)
+
+    def test_el_bom_y_el_utf16_tambien_se_normalizan(self):
+        # El `normalize` estaba sólo en el return final, así que las ramas
+        # del BOM y del UTF-16 devolvían el texto sin normalizar — y el
+        # «CSV UTF-8» de Excel SIEMPRE escribe BOM. El padrón que más
+        # importa seguía ciego después del arreglo de la víspera.
+        import codecs as _codecs
+        import unicodedata
+        from garita.nucleo import descifrar
+        nfd = unicodedata.normalize("NFD", "Cédula: 1710034065\n")
+        casos = {
+            "utf-8 con BOM": _codecs.BOM_UTF8 + nfd.encode("utf-8"),
+            "utf-16-le": nfd.encode("utf-16"),
+            "utf-16 sin marca": nfd.encode("utf-16-le"),
+        }
+        for nombre, crudo in casos.items():
+            self.assertIn("Cédula", descifrar(crudo), nombre)
 
     def test_el_codigo_normal_no_se_marca_por_no_llevar_comillas(self):
         # El motivo por el que las comillas se exigían: no morder código.
@@ -1004,6 +1074,87 @@ class ElDigitoVerificadorSeVerifica(unittest.TestCase):
         alfabeto = "0123456789ABCDEFGHIJKLMNPQRSTUVWXYZ"
         self.assertEqual(
             1, sum(1 for c in alfabeto if rfc_valido(rfc[:-1] + c)))
+
+
+class ElRepoRevisadoNoMandA(unittest.TestCase):
+    """v0.25.0: Garita corre dentro de CI sobre código que no controla, a
+    veces con permisos de escritura. Lo que el repositorio revisado trae
+    —nombres de archivo, configuración, patrones— no puede desarmarla."""
+
+    def test_un_archivo_llamado_como_bandera_no_apaga_la_revision(self):
+        # `git diff --name-only` devuelve el nombre crudo y argparse lee
+        # como BANDERA todo lo que empiece por guion: un archivo llamado
+        # «--version» imprimía la versión y salía 0 sin mirar nada. El
+        # nombre lo elige quien manda el pull request.
+        from garita.cli import main
+        td = repo_temporal({"llave.pem": "-----BEGIN RSA PRIVATE KEY-----\n"})
+        with td:
+            raiz = Path(td.name)
+            antes = os.getcwd()
+            os.chdir(raiz)
+            try:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    codigo = main(["--", "llave.pem"])
+            finally:
+                os.chdir(antes)
+        self.assertEqual(codigo, 1)
+
+    def test_el_envoltorio_separa_los_nombres_con_dos_guiones(self):
+        import importlib.util
+        ruta = Path(__file__).resolve().parent.parent / "scripts/ejecutar.py"
+        spec = importlib.util.spec_from_file_location("garita_action2", ruta)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.archivos_del_pr = lambda entorno: ["--version", "a.py"]
+        argv = mod.argumentos({"GARITA_SOLO_CAMBIOS": "true"})
+        self.assertIn("--", argv)
+        self.assertLess(argv.index("--"), argv.index("--version"))
+
+    def test_apagar_detectores_se_anuncia(self):
+        # El .garita.yml lo trae el repositorio revisado: en un PR de fork
+        # lo escribe quien manda el PR. Tres líneas apagaban todo y la
+        # salida era «✓ nada que reportar» sin mencionarlo.
+        td = repo_temporal({
+            "llave.pem": "-----BEGIN RSA PRIVATE KEY-----\n",
+            ".garita.yml": "detectores:\n  - secretos: false\n",
+        })
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+        self.assertEqual(codigo, 0, salida)
+        self.assertIn("detectores apagados por la configuración", salida)
+        self.assertIn("secretos", salida)
+
+    def test_sin_configuracion_no_se_anuncia_nada(self):
+        # `nombre` se apaga solo al no haber lista: anunciarlo sería ruido
+        # en todo repositorio sin configuración.
+        td = repo_temporal({"x.py": "x = 1\n"})
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+        self.assertNotIn("detectores apagados", salida)
+
+    def test_una_fuente_no_puede_salir_del_arbol_por_prefijo(self):
+        # La guardia comparaba PREFIJOS de cadena: la raíz «/w/trav» daba
+        # por dentro a «/w/trav-secretos/padron.txt», un directorio
+        # HERMANO cuyo nombre empieza igual.
+        from garita.fuentes import FuenteInvalida, cargar
+        with TemporaryDirectory() as d:
+            base = Path(d)
+            (base / "trav").mkdir()
+            (base / "trav-secretos").mkdir()
+            (base / "trav-secretos" / "padron.txt").write_text(
+                "Juanito Perez\n", encoding="utf-8")
+            with self.assertRaises(FuenteInvalida):
+                cargar("../trav-secretos/padron.txt", base / "trav")
+
+    def test_un_patron_con_muchos_comodines_no_cuelga(self):
+        # Doce «**» sobre una ruta de veinte segmentos tardaban 222
+        # segundos POR ARCHIVO, y el patrón vive en el .garita.yml del
+        # repositorio revisado.
+        import time
+        from garita.nucleo import casa_ruta
+        inicio = time.perf_counter()
+        casa_ruta("a/" * 20 + "b.py", "**/" * 14 + "b.py")
+        self.assertLess(time.perf_counter() - inicio, 1.0)
 
 
 class Fuentes(unittest.TestCase):

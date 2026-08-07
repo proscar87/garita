@@ -297,7 +297,7 @@ def main(argv: list[str] | None = None) -> int:
             # El documento ya quedó en su archivo; la consola sigue siendo
             # para humanos.
             imprimir(res, base=base, nuevos=nuevos, conocidos=conocidos,
-                     pagadas=pagadas, sin_color=args.sin_color)
+                     pagadas=pagadas, sin_color=args.sin_color, cfg=cfg)
             anotaciones_github(res, conocidos=conocidos)
         else:
             # stdout ES el documento: cualquier otra cosa ahí —reporte,
@@ -305,12 +305,12 @@ def main(argv: list[str] | None = None) -> int:
             sys.stdout.write(documento)
     else:
         imprimir(res, base=base, nuevos=nuevos, conocidos=conocidos,
-                 pagadas=pagadas, sin_color=args.sin_color)
+                 pagadas=pagadas, sin_color=args.sin_color, cfg=cfg)
         anotaciones_github(res, conocidos=conocidos)
 
     resumen = os.environ.get("GITHUB_STEP_SUMMARY")
     if resumen and not _anexar(resumen, resumen_markdown(
-            res, base=base, nuevos=nuevos, conocidos=conocidos)):
+            res, base=base, nuevos=nuevos, conocidos=conocidos, cfg=cfg)):
         return 2
     if not _salida_de_action(len(nuevos)):
         return 2

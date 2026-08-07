@@ -39,8 +39,11 @@ _SEPARA_CAMPO = frozenset(",;\t|")
 
 def _es_campo_completo(linea: str, ini: int, fin: int) -> bool:
     """¿La coincidencia ocupa una celda entera de una fila delimitada?"""
-    antes = linea[:ini].rstrip()
-    despues = linea[fin:].lstrip()
+    # Se recortan sólo ESPACIOS: `rstrip()` a secas borraba el tabulador
+    # antes de mirarlo, así que la rama del TSV nunca podía ser cierta y
+    # un export separado por tabuladores seguía perdiendo sus CLABEs.
+    antes = linea[:ini].rstrip(" ")
+    despues = linea[fin:].lstrip(" ")
     izq = not antes or antes[-1] in _SEPARA_CAMPO
     der = not despues or despues[0] in _SEPARA_CAMPO
     return izq and der

@@ -21,8 +21,16 @@ from ...nucleo import Detector
 from ._comun import buscador, limpio
 
 _TABLA = "TRWAGMYFPDXBNJZSQVHLCKE"
-_DNI = re.compile(r"(?<![\w-])\d{8}\s?-?\s?[A-Za-z](?![\w-])")
-_NIE = re.compile(r"(?<![\w-])[XYZxyz]\s?-?\s?\d{7}\s?-?\s?[A-Za-z](?![\w-])")
+# Con separador de MILLARES además del guion: «12.345.678-Z» es como se
+# escribe un DNI en una carta, una factura o una hoja de cálculo española,
+# y sin admitirlo esa forma era invisible. El punto no cuenta como refuerzo
+# —eso lo decide `_comun` con su propia regla— así que admitirlo aquí no
+# afloja nada: sólo deja que el validador llegue a verlo.
+_DNI = re.compile(
+    r"(?<![\w.-])(?:\d{8}|\d{2}\.\d{3}\.\d{3})\s?-?\s?[A-Za-z](?![\w-])")
+_NIE = re.compile(
+    r"(?<![\w.-])[XYZxyz]\s?-?\s?(?:\d{7}|\d\.\d{3}\.\d{3})"
+    r"\s?-?\s?[A-Za-z](?![\w-])")
 # «B-12345678» es la forma más común por escrito, y sin admitirla la rama
 # de separadores del refuerzo quedaba muerta. Pero el separador es el
 # GUION, nunca el espacio solo: con \s en la regex, el mismo espacio que

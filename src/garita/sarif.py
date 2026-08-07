@@ -94,6 +94,15 @@ def generar(res: Resultado, detectores, conocidos=()) -> dict:
             },
         })
 
+    # Lo que NO se pudo revisar entra al documento como alerta propia. El
+    # SARIF es el ÚNICO canal de la auditoría mensual: sin esto, la pestaña
+    # Security decía «cero alertas» sobre un padrón de 2 MB que nadie leyó
+    # o sobre un archivo que ni se pudo abrir. Un guardián que calla lo que
+    # no miró es el que esta herramienta existe para no ser.
+    resultados += _alertas_de_lo_no_revisado(res)
+    reglas.setdefault(
+        "sin_revisar", "Archivos que Garita no pudo o no debió leer")
+
     return {
         "$schema": ESQUEMA,
         "version": VERSION_SARIF,
@@ -114,6 +123,37 @@ def generar(res: Resultado, detectores, conocidos=()) -> dict:
             },
             "results": resultados,
         }],
+    }
+
+
+def _alertas_de_lo_no_revisado(res) -> list:
+    """Una alerta por archivo que quedó sin mirar, con su motivo."""
+    fuera = []
+    for archivo, motivo in getattr(res, "ilegibles", ()):
+        fuera.append(_alerta_sin_revisar(
+            archivo, "error",
+            f"No se pudo leer ({motivo}). Garita no puede decir que está "
+            f"limpio: no lo miró. Arregla el acceso y vuelve a correr."))
+    for archivo, motivo in getattr(res, "omitidos_grandes", ()):
+        fuera.append(_alerta_sin_revisar(
+            archivo, "warning",
+            f"Sin revisar: {motivo}. Un archivo grande es justo donde cabe "
+            f"un padrón entero — revísalo aparte."))
+    return fuera
+
+
+def _alerta_sin_revisar(archivo: str, nivel: str, texto: str) -> dict:
+    return {
+        "ruleId": "sin_revisar",
+        "level": nivel,
+        "message": {"text": texto},
+        "locations": [{
+            "physicalLocation": {
+                "artifactLocation": {"uri": _uri(archivo)},
+                "region": {"startLine": 1},
+            },
+        }],
+        "partialFingerprints": {"garitaSinRevisar/v1": archivo},
     }
 
 
@@ -149,8 +189,16 @@ def generar_historial(res, detectores) -> dict:
                   "— vive en cada clon y cada fork")
         duracion = (f"; duró {hh.versiones} versiones del archivo"
                     if hh.versiones > 1 else "")
+        # Las OTRAS rutas del blob viajan al documento: la que encabeza es
+        # la de origen, y ésa puede ser la inocente. Una llave nacida en
+        # `tests/fixture.pem` y viva en `src/secreto.pem` se anunciaba con
+        # el nombre del fixture, el que invita a cerrar la alerta.
+        otras = getattr(hh, "otras_rutas", ())
+        tambien = (f" También vivió en: {', '.join(otras[:5])}."
+                   if otras else "")
         texto = (f"[{estado}] {h.que} — {h.por_que} Entró en el commit "
-                 f"{hh.commit} ({hh.fecha}){duracion}. → {h.como_arreglar}")
+                 f"{hh.commit} ({hh.fecha}){duracion}.{tambien} "
+                 f"→ {h.como_arreglar}")
         resultados.append({
             "ruleId": h.detector,
             "level": "error" if h.severidad == "error" else "warning",

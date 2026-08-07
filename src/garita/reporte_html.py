@@ -309,8 +309,15 @@ def generar_historial(res, raiz: str, fecha: str) -> str:
         for hh in hs:
             h = hh.hallazgo
             duracion = (f" · {hh.versiones} versiones" if hh.versiones > 1 else "")
+            # La ruta que encabeza es la de ORIGEN, que puede ser la
+            # inocente: una llave nacida en un fixture y viva hoy en src/
+            # se anunciaba con el nombre del fixture.
+            otras = getattr(hh, "otras_rutas", ())
+            tambien = ("<br><span class='suave'>también en: "
+                       + ", ".join(_E(r) for r in otras[:5]) + "</span>"
+                       if otras else "")
             filas.append(_fila_hallazgo(
-                [f"<code>{_E(h.archivo)}</code>",
+                [f"<code>{_E(h.archivo)}</code>{tambien}",
                  f"<code>{_E(hh.commit)}</code><br><span class='suave'>"
                  f"{_E(hh.fecha)}{duracion}</span>",
                  _E(h.detector), f"<code>{_E(h.que)}</code>"],

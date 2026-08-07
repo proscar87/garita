@@ -383,24 +383,29 @@ def _asignaciones_de_la_linea(linea: str):
     # `finditer`, no `search` — la misma lección que en `buscar`: si la
     # primera asignación de la línea es un marcador, el `continue` no
     # debe tragarse la credencial real que viene después.
+    #
+    # El tercer elemento dice de qué rama viene: el filtro de referencias
+    # es SÓLO para la pelona. Aplicado también a la entrecomillada mataba
+    # las credenciales de prefijo punteado —`hvs.` de Vault, `dp.st.` de
+    # Doppler, `cs.live.`— que v0.23.0 sí reportaba.
     for m in NOMBRES_SOSPECHOSOS.finditer(linea):
         vistos.add(m.group(3))
-        yield m.group(1), m.group(3)
+        yield m.group(1), m.group(3), False
     for m in NOMBRES_SOSPECHOSOS_PELON.finditer(linea):
         if m.group("valor") not in vistos:
-            yield m.group(1), m.group("valor")
+            yield m.group(1), m.group("valor"), True
 
 
 def buscar_asignaciones(texto: str, archivo: str) -> Iterator[Hallazgo]:
     for i, linea in enumerate(texto.splitlines(), 1):
-        for nombre, valor in _asignaciones_de_la_linea(linea):
+        for nombre, valor, sin_comillas in _asignaciones_de_la_linea(linea):
             # Una interpolación no es un secreto: es lo correcto.
             if valor.startswith(("$", "process.env", "os.environ", "env.")):
                 continue
             # Ni una referencia a otra cosa: `password: config.db_pass`,
             # `token = settings.TOKEN`. Sin comillas eso es lo normal en
             # código, y marcarlo enseñaría a ignorar al guardián.
-            if _ES_REFERENCIA.match(valor):
+            if sin_comillas and _ES_REFERENCIA.match(valor):
                 continue
             if es_marcador(valor):
                 continue

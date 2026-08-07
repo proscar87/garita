@@ -127,6 +127,15 @@ def _normalizar(valor: object, origen: str) -> list[str]:
     return sorted(set(fuera))
 
 
+def _dentro_de(ruta: Path, raiz: Path) -> bool:
+    """¿La ruta cuelga del árbol de la raíz? Por segmentos, no por texto."""
+    try:
+        ruta.relative_to(raiz)
+        return True
+    except ValueError:
+        return False
+
+
 def existe(spec: str, raiz: Path) -> bool:
     """¿El archivo de la fuente está en esta máquina?
 
@@ -156,7 +165,13 @@ def cargar(spec: str, raiz: Path) -> list[str]:
 
     ruta = (raiz / rel).resolve()
     # Un `..` en la especificación podría leer fuera del repositorio.
-    if not str(ruta).startswith(str(raiz.resolve())):
+    # La comparación es por ÁRBOL, no por prefijo de cadena: con
+    # `startswith`, la raíz `/w/trav` daba por dentro a
+    # `/w/trav-secretos/padron.txt` —un directorio HERMANO cuyo nombre
+    # empieza igual—, que es exactamente lo que esta guardia existía para
+    # impedir. Y no es sólo lectura: esa lista se vuelve el patrón del
+    # detector `nombre`, que imprime lo que casa.
+    if not _dentro_de(ruta, raiz.resolve()):
         raise FuenteInvalida(
             f"la fuente '{spec}' apunta fuera del repositorio. Sólo se leen "
             f"archivos del propio proyecto."

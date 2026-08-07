@@ -152,7 +152,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.24.1
+    rev: v0.25.0
     hooks:
       - id: garita
 ```
@@ -525,7 +525,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.24.1
+    rev: v0.25.0
     hooks:
       - id: garita
 ```

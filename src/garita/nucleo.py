@@ -237,6 +237,16 @@ codecs.register_error(
 )
 
 
+def _nfc(texto: str) -> str:
+    """Normaliza a NFC. Sin esto, un archivo en NFD —«Cédula» con la e y el
+    acento como caracteres separados, que es lo que produce macOS y varios
+    exportadores— es OTRA cadena para cada patrón acentuado del proyecto:
+    los contextos de EC, DO, PT, UY, CO, CL, VE y el del NSS dejan de
+    casar, y con `exige_contexto` eso es quedarse ciego del todo. El
+    detector de nombres tampoco casa un nombre con acento."""
+    return unicodedata.normalize("NFC", texto)
+
+
 def _utf16_sin_marca(crudo: bytes) -> str | None:
     """UTF-16 al que nadie le puso BOM, reconocido por sus nulos alternados.
 
@@ -277,15 +287,21 @@ def descifrar(crudo: bytes) -> str | None:
     miró. Es el default histórico de Excel y de los editores de Windows en
     español, o sea el formato en que llegan los padrones de esta región.
     """
+    # UN SOLO punto de salida normalizado. Con el `normalize` sólo en el
+    # return final, las ramas del BOM y del UTF-16 devolvían el texto en
+    # crudo — y son justo los formatos que este docstring nombra: el «CSV
+    # UTF-8» de Excel SIEMPRE escribe BOM. Un padrón exportado de Excel en
+    # NFD seguía completamente ciego después del arreglo de anoche.
     for marca, codificacion in _BOM:
         if crudo.startswith(marca):
             try:
-                return crudo.decode(codificacion, "replace")
+                return _nfc(crudo.decode(codificacion, "replace"))
             except (UnicodeDecodeError, LookupError):
                 return None
 
     if b"\0" in crudo:
-        return _utf16_sin_marca(crudo)
+        texto = _utf16_sin_marca(crudo)
+        return None if texto is None else _nfc(texto)
     # La codificación se decide POR BYTE, no por archivo. Las dos versiones
     # anteriores elegían una codificación para todo el archivo y por eso
     # cada arreglo abría la ceguera contraria: primero un byte Latin-1
@@ -295,14 +311,7 @@ def descifrar(crudo: bytes) -> str | None:
     # le pegó una línea desde un editor moderno— y las dos direcciones se
     # pueden servir a la vez: se decodifica UTF-8 y sólo las secuencias
     # inválidas se leen como cp1252.
-    # NFC al salir. Sin normalizar, un archivo en NFD —«Cédula» con la e y
-    # el acento como caracteres separados, que es lo que produce macOS y
-    # varios exportadores— es OTRA cadena para cada patrón acentuado del
-    # proyecto: los contextos de EC, DO, PT, UY, CO, CL, VE y el del NSS
-    # dejaban de casar, y con `exige_contexto` eso es quedarse ciego del
-    # todo. El detector de nombres tampoco casaba un solo nombre con acento.
-    return unicodedata.normalize(
-        "NFC", crudo.decode("utf-8", "garita_cp1252"))
+    return _nfc(crudo.decode("utf-8", "garita_cp1252"))
 
 
 def _existe_pero_no_se_alcanza(ruta: Path) -> bool:
@@ -369,7 +378,24 @@ def casa_ruta(archivo: str, patron: str) -> bool:
     partes_a = archivo.split("/")
     partes_p = patron.split("/")
 
+    # MEMOIZADO. Sin esto, cada `**` multiplicaba las ramas y el costo era
+    # combinatorio: medido, doce `**` sobre una ruta de veinte segmentos
+    # tardaban 222 segundos POR ARCHIVO, y el patrón lo escribe el
+    # repositorio revisado en su `.garita.yml`. Un guardián que cuelga el
+    # job hasta el tope de seis horas es un guardián desinstalado. Con la
+    # tabla, los estados posibles son (segmentos × patrón) y el peor caso
+    # se vuelve lineal.
+    vistos: dict[tuple[int, int], bool] = {}
+
     def desde(i: int, j: int) -> bool:
+        clave = (i, j)
+        if clave in vistos:
+            return vistos[clave]
+        resultado = _resolver(i, j)
+        vistos[clave] = resultado
+        return resultado
+
+    def _resolver(i: int, j: int) -> bool:
         while j < len(partes_p):
             if partes_p[j] == "**":
                 if j + 1 == len(partes_p):
