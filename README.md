@@ -383,6 +383,11 @@ exenciones:
 fallar_en_aviso: false
 ```
 
+> **Se llaman «exenciones»** — lo que otras herramientas llaman
+> *excepciones*, *ignores*, *exclusiones* o *allowlist*. La palabra es la de
+> «exención fiscal»: la regla aplica y a este caso se le libera de ella, con
+> su motivo escrito. Si buscabas «excepciones», es esta sección.
+
 **Vas a tener exenciones, y eso está bien.** Todo repositorio real tiene
 datos que SÍ deben estar ahí: un catálogo público, los vectores de prueba
 oficiales de un validador, las actas donde alguien aparece por su cargo. La
@@ -571,6 +576,14 @@ months ago and "deleted" the next day is invisible to a normal scan, but git
 never forgets. The report separates what's still in the tree from what lives
 only in history, where the fix is rotating the credential — never a silent
 history rewrite.
+
+**A note on vocabulary**, since the config keys are in Spanish: `exenciones`
+are what other tools call *exceptions*, *ignores* or an *allowlist* — each
+one needs a written `motivo` (reason), and Garita refuses to run without it.
+`nombres` is the list of names to protect, `clientes` the client list,
+`paises` the country selection, `detectores` the on/off switches. Run
+`garita --proponer-exenciones` and it writes the block for you, with the
+reason left blank for you to fill in.
 
 Config, findings format and design rationale: see the Spanish sections above
 and [`docs/DISENO.md`](docs/DISENO.md). Built with
