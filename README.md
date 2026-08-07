@@ -1,8 +1,9 @@
 # Garita
 
 **Impide que datos personales y credenciales entren a tu repositorio.**
-Nombres de tu propio padrón, CURP, RFC, CLABE, NSS, teléfonos mexicanos y
-secretos — como hook de `pre-commit` y como GitHub Action.
+Nombres de tu propio padrón, identificadores oficiales de dieciséis países de
+América y la península ibérica (CURP, RFC, CLABE, CPF, CUIT, RUT, DNI, IBAN…),
+teléfonos y secretos — como hook de `pre-commit` y como GitHub Action.
 
 [![CI](https://github.com/proscar87/garita/actions/workflows/ci.yml/badge.svg)](https://github.com/proscar87/garita/actions/workflows/ci.yml)
 [![MIT](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
@@ -46,8 +47,9 @@ Garita es eso que faltaba.
 | `clabe` | CLABE interbancaria | **Dígito de control** (3-7-1, módulo 10) |
 | `nss` | NSS del IMSS | **Luhn** + exige contexto léxico en la línea |
 | `telefono` | Teléfono mexicano de 10 dígitos | **Lada asignada en el PNN del IFT** + prefijo, separadores o contexto |
+| *(otros 15 países)* | CPF, CUIT, RUT, NIT, DNI, IBAN, SSN, RIF… | Ver la tabla de países más abajo |
 | `secretos` | JWT, llaves privadas, tokens, URLs con contraseña | Estructura completa, no fragmentos |
-| `asignacion_sospechosa` | `password = "algo largo"` | Ignora lecturas del entorno |
+| `asignacion_sospechosa` | `password = algo largo`, con o sin comillas | Ignora referencias y lecturas del entorno |
 
 **Validar el dígito verificador no es un detalle.** Un detector que marca
 cualquier cadena de 18 caracteres como CURP grita todo el tiempo, y un
