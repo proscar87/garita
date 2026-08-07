@@ -138,7 +138,7 @@ def imprimir(res: Resultado, salida=None, base=None,
             print(n(f"    {_ruta(patron)}", "gris"), file=salida)
         print(n("  El archivo se renombró o se borró. Si se renombró, lleva "
                 "revisándose sin exención\n  desde entonces; si se borró, la "
-                "regla esconfiguración muerta. Actualiza .garita.yml.", "gris"),
+                "regla es configuración muerta. Actualiza .garita.yml.", "gris"),
               file=salida)
 
     if not nuevos:
