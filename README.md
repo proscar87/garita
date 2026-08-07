@@ -150,7 +150,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.24.0
+    rev: v0.24.1
     hooks:
       - id: garita
 ```
@@ -470,14 +470,15 @@ MIT © 2026 Oscar Pacheco ([proscar87](https://github.com/proscar87)).
 # Garita (English)
 
 **Keeps personal data and credentials out of your repository.** Names from
-your own records, Mexican national IDs (CURP, RFC, CLABE, NSS), phone numbers
-and secrets — as a `pre-commit` hook and as a GitHub Action.
+your own records, official IDs from 16 countries across the Americas and the
+Iberian peninsula (CURP, RFC, CLABE, CPF, CUIT, RUT, DNI, IBAN…), phone
+numbers and secrets — as a `pre-commit` hook and as a GitHub Action.
 
 ## Why it exists
 
-It came out of administering a condominium. The financial records had to be versioned — it's neighbours' money and someone will audit
-it. The resident roster could not be: Mexican privacy law regulates it and git
-history doesn't forget.
+It came out of a common problem: a project where the financial records **had
+to be** versioned — someone will audit them — and the roster of people could
+**not** be. Privacy law regulates it and git history doesn't forget.
 
 The rule that emerged sums up the tool:
 
@@ -522,7 +523,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.24.0
+    rev: v0.24.1
     hooks:
       - id: garita
 ```

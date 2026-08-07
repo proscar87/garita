@@ -906,6 +906,106 @@ class PorDondeEntraElDato(unittest.TestCase):
         self.assertLess(time.perf_counter() - inicio, 1.0)
 
 
+class ElDigitoVerificadorSeVerifica(unittest.TestCase):
+    """Un vector negativo por país, que es lo que faltaba.
+
+    La quinta oleada encontró la mutación: se podía quitar la comprobación
+    del dígito de control de diez validadores y las pruebas seguían en
+    verde, porque sólo se afirmaba lo que SÍ valida. La forma fuerte de
+    exigirlo es ésta: de todos los dígitos de control posibles, **uno y
+    sólo uno** puede ser el bueno. Si alguien afloja la validación, este
+    conteo pasa de 1 y la prueba cae.
+    """
+
+    def _vectores(self):
+        from garita.detectores.paises import (
+            ar, br, ca, cl, co, do, ec, es, gt, mx, pe, pt, py, us, uy, ve)
+        return [
+            (ar.cuit_valido, "20-12345678-6", "0123456789"),
+            (br.cpf_valido, "111.444.777-35", "0123456789"),
+            (br.cnpj_valido, "12.345.678/0001-95", "0123456789"),
+            (cl.rut_valido, "12.345.678-5", "0123456789K"),
+            (co.nit_valido, "900.123.456-8", "0123456789"),
+            (es.dni_valido, "10345678W", "TRWAGMYFPDXBNJZSQVHLCKE"),
+            (es.nie_valido, "X1234567L", "TRWAGMYFPDXBNJZSQVHLCKE"),
+            (es.cif_valido, "A12345674", "0123456789"),
+            (pe.ruc_valido, "20100079772", "0123456789"),
+            # El SSN NO lleva dígito verificador —valida por estructura de
+            # la SSA— y por eso va aparte, abajo.
+            (ca.sin_valido, "730 425 618", "0123456789"),
+            (pt.nif_valido, "203456785", "0123456789"),
+            (uy.ci_valida, "4.870.913-5", "0123456789"),
+            (ec.cedula_ec_valida, "1710034065", "0123456789"),
+            (do.cedula_do_valida, "001-1391820-5", "0123456789"),
+            (ve.rif_valido, "J-12345678-4", "0123456789"),
+            (py.ruc_py_valido, "80024242-4", "0123456789"),
+            (gt.nit_gt_valido, "5000000-4", "0123456789K"),
+            (mx.clabe_valida, "002180000000001008", "0123456789"),
+            (mx.nss_valido, "92988084494", "0123456789"),
+        ]
+
+    def test_solo_un_digito_de_control_es_valido(self):
+        for validar, vector, alfabeto in self._vectores():
+            self.assertTrue(validar(vector), f"{validar.__name__}: {vector}")
+            validos = [c for c in alfabeto
+                       if validar(vector[:-1] + c)]
+            self.assertEqual(
+                1, len(validos),
+                f"{validar.__name__}: {len(validos)} dígitos de control "
+                f"válidos ({validos}); debería ser exactamente uno. Si son "
+                f"todos, la comprobación no se está haciendo.")
+
+    def test_el_iban_rechaza_sus_dos_digitos_de_control(self):
+        # Aparte porque su control son DOS dígitos y valida dos veces: el
+        # módulo 97 del IBAN y el control interno del CCC.
+        from garita.detectores.paises.es import iban_valido
+        bueno = "ES91 2100 0418 4502 0005 1332"
+        self.assertTrue(iban_valido(bueno))
+        validos = [f"{d:02d}" for d in range(100)
+                   if iban_valido("ES" + f"{d:02d}" + bueno[4:])]
+        self.assertEqual(["91"], validos)
+
+    def test_el_archivo_grande_se_nombra_en_el_escaneo_normal(self):
+        # Segunda mutación que sobrevivía: borrar la línea que NOMBRA el
+        # archivo omitido por tamaño dejaba la suite en verde, porque sólo
+        # el camino de --historial lo exigía. El del hook, el de la Action
+        # y el de la CLI ordinaria pasan por aquí, y un volcado de 2 MB
+        # con un padrón dentro desaparecía en el conteo agregado.
+        td = repo_temporal({"chico.py": "x = 1\n"})
+        with td:
+            raiz = Path(td.name)
+            (raiz / "volcado.csv").write_text("x" * 2_100_000,
+                                              encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz)
+        self.assertIn("volcado.csv", salida)
+        self.assertIn("Sin revisar por tamaño", salida)
+
+    def test_el_ssn_rechaza_lo_que_la_ssa_nunca_asigna(self):
+        # No tiene dígito verificador: su validación es estructural, así
+        # que el vector negativo son los rangos que nunca se emitieron.
+        from garita.detectores.paises.us import ssn_valido
+        self.assertTrue(ssn_valido("531-88-2074"))
+        for malo in ("000-88-2074",     # área 000
+                     "666-88-2074",     # área 666, nunca asignada
+                     "531-00-2074",     # grupo 00
+                     "531-88-0000",     # serie 0000
+                     "900-45-2074"):    # 9xx fuera de los rangos ITIN
+            self.assertFalse(ssn_valido(malo), malo)
+
+    def test_el_curp_y_el_rfc_rechazan_su_control(self):
+        from garita.detectores.paises.mx import curp_valido, rfc_valido
+        curp = "AABB900101HDFCDF09"
+        self.assertTrue(curp_valido(curp))
+        self.assertEqual(
+            1, sum(1 for c in "0123456789" if curp_valido(curp[:-1] + c)))
+        rfc = "GOPE800101A18"
+        self.assertTrue(rfc_valido(rfc))
+        alfabeto = "0123456789ABCDEFGHIJKLMNPQRSTUVWXYZ"
+        self.assertEqual(
+            1, sum(1 for c in alfabeto if rfc_valido(rfc[:-1] + c)))
+
+
 class Fuentes(unittest.TestCase):
     def cargar(self, contenido: str, spec: str = "gen.py:PROHIBIDOS"):
         with TemporaryDirectory() as d:

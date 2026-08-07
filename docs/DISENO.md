@@ -80,9 +80,17 @@ La validación cambia el orden de magnitud: entre 90 y 5,000 veces menos falsos
 positivos según el identificador. Ver [`IDENTIFICADORES.md`](IDENTIFICADORES.md).
 
 El NSS lleva esto más lejos y **exige contexto léxico en la línea**, porque
-Luhn solo corta el 90% y once dígitos también son un folio. Es el único
-detector con esa regla, y está documentado para que nadie lo tome por
-descuido.
+Luhn solo corta el 90% y once dígitos también son un folio. Fue el primero
+con esa regla; hoy la comparten nueve detectores —los de identificadores sin
+verificador propio o con uno demasiado permisivo: NSS, cédula ecuatoriana,
+NIF portugués, NIT guatemalteco, SSN, cédula dominicana, SIN canadiense, RUC
+paraguayo y el NIT colombiano de base ocho.
+
+**Y trae una consecuencia que conviene decir en voz alta**: la palabra tiene
+que estar en LA MISMA LÍNEA. Un padrón exportado con el encabezado arriba y
+las filas debajo no la lleva en cada fila, así que esos detectores no lo ven.
+Es el precio de no convertirlos en ruido, y se paga a sabiendas: para ese
+caso están los detectores CON verificador propio, que no necesitan contexto.
 
 ---
 

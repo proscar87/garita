@@ -1,5 +1,5 @@
 name: 'Garita PII Guard'
-description: 'Impide que datos personales y credenciales entren al repositorio: nombres de tu padrón, CURP, RFC, CLABE, NSS y secretos.'
+description: 'Impide que datos personales y credenciales entren al repositorio: nombres de tu padrón, identificadores oficiales de 16 países de América y la península ibérica (CURP, RFC, CLABE, CPF, CUIT, RUT, DNI, IBAN…) y secretos.'
 author: 'Oscar Pacheco (proscar87)'
 
 branding:

@@ -189,7 +189,8 @@ def digito(nss10: str) -> str:
 | `92988084495` | no — dígito mutado |
 | `29988084494` | no — transposición de los dos primeros |
 
-**Es el único detector que exige contexto.** Luhn corta el 90%, y once dígitos
+**Fue el primer detector que exigió contexto**, y hoy son nueve (ver la
+política de `_comun.py` al principio de este documento). Luhn corta el 90%, y once dígitos
 también son un folio, un teléfono con lada internacional o una CLABE truncada.
 Sin exigir que la línea mencione `NSS`, `IMSS`, `seguro social` o `afiliación`,
 este detector solo sería ruido — y el ruido es lo que enseña a la gente a

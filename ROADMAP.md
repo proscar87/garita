@@ -105,7 +105,7 @@ v0.13.0–v0.16.0 (20 de 20), v0.17.0–v0.20.1 (23 de 23) y v0.20.2–v0.23.0
 
 ### La suite
 
-- [ ] **«Sin revisar por tamaño» sólo tiene prueba en `--historial`** —
+- [x] **«Sin revisar por tamaño» sólo tiene prueba en `--historial`** —
   `tests/test_garita.py:1709`. Mutación que sobrevive: borrar la línea de
   `nucleo.py` que NOMBRA el archivo omitido por tamaño deja las 248 pruebas
   en verde. Con esa línea muerta, un volcado de 2 MB con un padrón dentro
@@ -113,7 +113,7 @@ v0.13.0–v0.16.0 (20 de 20), v0.17.0–v0.20.1 (23 de 23) y v0.20.2–v0.23.0
 
 ### Los documentos
 
-- [ ] **«Es el único detector con esa regla» — hoy son nueve** —
+- [x] **«Es el único detector con esa regla» — hoy son nueve** —
   `docs/DISENO.md:85` y `docs/IDENTIFICADORES.md:192`, que lo repite en
   negritas. Además del NSS mexicano exigen contexto ec, pt, gt, us, do, co
   (el NIT de base 8), py y ca. No es cosmético: `_comun` exige la palabra en
@@ -163,7 +163,7 @@ v0.13.0–v0.16.0 (20 de 20), v0.17.0–v0.20.1 (23 de 23) y v0.20.2–v0.23.0
 
 ### Calibración y pruebas
 
-- [ ] **Diez detectores de país sin un solo vector negativo** —
+- [x] **Diez detectores de país sin un solo vector negativo** —
   `tests/test_garita.py:42`. Mutación que sobrevive: quitar la comprobación
   del dígito verificador y las pruebas siguen verdes. Cada país necesita su
   caso «esto NO valida».
@@ -178,9 +178,9 @@ v0.13.0–v0.16.0 (20 de 20), v0.17.0–v0.20.1 (23 de 23) y v0.20.2–v0.23.0
   mensaje sin archivo ni remedio — `cli.py:177`.
 - [ ] El error de país manda a `docs/AGREGAR_PAIS.md`, que el paquete
   instalado no trae — `detectores/paises/__init__.py:67`.
-- [ ] La descripción del Marketplace y la del hook siguen siendo sólo
+- [x] La descripción del Marketplace y la del hook siguen siendo sólo
   mexicanas: 15 de los 16 países no aparecen — `action.yml:2`.
-- [ ] La sección inglesa reexpone el origen que la española generalizó —
+- [x] La sección inglesa reexpone el origen que la española generalizó —
   `README.md:478`.
 
 ---
