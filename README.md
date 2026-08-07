@@ -152,7 +152,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.25.0
+    rev: v0.26.0
     hooks:
       - id: garita
 ```
@@ -383,10 +383,30 @@ exenciones:
 fallar_en_aviso: false
 ```
 
-**El motivo es obligatorio.** Una lista de exenciones sin razones se convierte,
-en pocos meses, en la lista de archivos que nadie se atreve a tocar porque
-nadie recuerda por qué están ahí. Con el motivo escrito, cualquiera puede
-evaluar si sigue siendo válido.
+**Vas a tener exenciones, y eso está bien.** Todo repositorio real tiene
+datos que SÍ deben estar ahí: un catálogo público, los vectores de prueba
+oficiales de un validador, las actas donde alguien aparece por su cargo. La
+pregunta no es cómo evitar las exenciones, sino que cada una diga por qué
+existe. Para eso:
+
+```bash
+garita --proponer-exenciones     # escribe el bloque; el motivo lo escribes tú
+```
+
+Imprime el YAML listo para pegar, agrupado por archivo y acotado a los
+detectores que dispararon, **con el motivo en blanco**.
+
+**El motivo es obligatorio, y se hace cumplir.** Un motivo vacío no es una
+advertencia: es código 2 y Garita no corre, así que el bloque propuesto no se
+puede pegar y olvidar. Una lista de exenciones sin razones se convierte, en
+pocos meses, en la lista de archivos que nadie se atreve a tocar porque nadie
+recuerda por qué están ahí. Con el motivo escrito, cualquiera puede evaluar
+si sigue siendo válido — y ese «cualquiera» suele ser uno mismo, un año
+después.
+
+Lo demás del ciclo también es ruidoso a propósito: las exenciones que aplican
+se cuentan en cada corrida, y **una exención que deja de casar se reporta** —
+si renombraste el archivo, lleva revisándose sin exención desde entonces.
 
 Las exenciones se acotan por detector: exentar un archivo de `curp` no debería
 exentarlo también de `llave_privada`.
@@ -525,7 +545,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.25.0
+    rev: v0.26.0
     hooks:
       - id: garita
 ```

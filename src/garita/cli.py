@@ -80,6 +80,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--explicar", action="store_true",
                    help="muestra qué se va a revisar y con qué configuración, "
                         "sin revisar")
+    p.add_argument("--proponer-exenciones", action="store_true",
+                   help="escribe el bloque de exenciones para lo que se "
+                        "encontró, con el motivo EN BLANCO para que lo "
+                        "llenes; sin motivo Garita no corre")
     lb = p.add_mutually_exclusive_group()
     lb.add_argument("--linea-base", action="store_true",
                     help="congela los hallazgos actuales como deuda aceptada; "
@@ -128,6 +132,14 @@ def main(argv: list[str] | None = None) -> int:
         # Callar el reporte humano hacia un archivo no tiene caso de uso;
         # aceptar la bandera y sorprender después es peor que rechazarla.
         print("Garita: --salida sólo aplica con --formato sarif o html.",
+              file=sys.stderr)
+        return 2
+
+    if args.proponer_exenciones and (args.formato != "humano" or args.salida
+                                     or args.explicar or args.linea_base
+                                     or args.historial):
+        print("Garita: --proponer-exenciones escribe un bloque de YAML para "
+              "pegar; no produce documento ni se combina con los otros modos.",
               file=sys.stderr)
         return 2
 
@@ -269,6 +281,9 @@ def main(argv: list[str] | None = None) -> int:
         raiz, detectores, cfg.exenciones,
         archivos=args.archivos or None,
     )
+
+    if args.proponer_exenciones:
+        return _proponer_exenciones(res, raiz)
 
     if base is not None:
         nuevos, conocidos = base.filtrar(res.hallazgos)
@@ -488,6 +503,47 @@ def _congelar(args, cfg, detectores, raiz: Path, ruta_lb: Path) -> int:
           f"como deuda aceptada.")
     print("  Esto detiene la sangría, no paga la deuda. Commitea el archivo "
           "y achícalo conforme limpies.")
+    return 0
+
+
+def _proponer_exenciones(res, raiz: Path) -> int:
+    """El bloque de exenciones para lo que se acaba de encontrar, listo
+    para pegar — y con el motivo EN BLANCO.
+
+    Existe porque el reporte decía «exenta el archivo con su motivo» sin
+    decir cómo, y escribir YAML de memoria es la clase de fricción que
+    termina en «mejor apago el paso». El esqueleto no puede abrir un
+    agujero en silencio: `cargar()` rechaza con código 2 la exención sin
+    motivo, así que pegarlo y no llenarlo DETIENE a Garita en vez de
+    callarla. Quien lo llena está escribiendo la justificación que dentro
+    de un año permitirá evaluar si sigue valiendo.
+
+    NO se imprime ningún valor: el bloque nombra archivo y detectores, que
+    es lo que la exención necesita.
+    """
+    if not res.hallazgos:
+        print("Garita: nada que exentar — no se encontró nada.")
+        return 0
+
+    por_archivo: dict[str, set] = {}
+    for h in res.hallazgos:
+        por_archivo.setdefault(h.archivo, set()).add(h.detector)
+
+    print("# Pega esto en .garita.yml y ESCRIBE CADA MOTIVO.")
+    print("# Garita no corre con un motivo en blanco: es código 2, a")
+    print("# propósito. Una lista de exenciones sin razones se convierte,")
+    print("# en pocos meses, en la lista de archivos que nadie se atreve a")
+    print("# tocar porque nadie sabe por qué están ahí.")
+    print("#")
+    print("# Y antes de exentar, pregúntate si el dato debería estar ahí:")
+    print("# la exención es para lo que SÍ va (un catálogo público, un")
+    print("# vector de prueba oficial), no para lo que estorba.")
+    print("exenciones:")
+    for archivo in sorted(por_archivo):
+        dets = ", ".join(sorted(por_archivo[archivo]))
+        print(f"  - archivo: {archivo}")
+        print(f"    motivo:")
+        print(f"    detectores: {dets}")
     return 0
 
 

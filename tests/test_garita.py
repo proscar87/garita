@@ -1157,6 +1157,83 @@ class ElRepoRevisadoNoMandA(unittest.TestCase):
         self.assertLess(time.perf_counter() - inicio, 1.0)
 
 
+class LasExcepcionesSeDocumentan(unittest.TestCase):
+    """v0.26.0: usar Garita implica tener excepciones, y el diseño hace
+    que cada una nazca con su justificación escrita."""
+
+    REPO = {"datos.txt": "CLABE 002180000645829179\nRFC GOPE800101A18\n",
+            "llave.pem": "-----BEGIN RSA PRIVATE KEY-----\n"}
+
+    def test_propone_el_bloque_agrupado_por_archivo(self):
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            codigo, salida = correr_garita(
+                Path(td.name), "--proponer-exenciones")
+        self.assertEqual(codigo, 0, salida)
+        self.assertIn("exenciones:", salida)
+        self.assertIn("- archivo: datos.txt", salida)
+        self.assertIn("detectores: clabe, rfc", salida)
+        self.assertIn("- archivo: llave.pem", salida)
+        # Ningún valor: la exención se define por archivo y detector.
+        self.assertNotIn("002180000645829179", salida)
+        self.assertNotIn("GOPE800101A18", salida)
+
+    def test_el_esqueleto_pegado_sin_llenar_detiene_a_garita(self):
+        # El punto entero: no se puede pegar y olvidar. Un motivo en
+        # blanco es código 2, así que el esqueleto no abre un agujero.
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            raiz = Path(td.name)
+            _, propuesta = correr_garita(raiz, "--proponer-exenciones")
+            bloque = "\n".join(l for l in propuesta.splitlines()
+                               if not l.startswith("#"))
+            (raiz / ".garita.yml").write_text(bloque, encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz)
+        self.assertEqual(codigo, 2, salida)
+        self.assertIn("no tiene motivo", salida)
+
+    def test_con_los_motivos_escritos_si_exenta(self):
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            raiz = Path(td.name)
+            (raiz / ".garita.yml").write_text(
+                "exenciones:\n"
+                "  - archivo: datos.txt\n"
+                "    motivo: catálogo público del banco, no de personas\n"
+                "    detectores: clabe, rfc\n"
+                "  - archivo: llave.pem\n"
+                "    motivo: llave de prueba del fixture de TLS\n"
+                "    detectores: llave_privada\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz)
+        self.assertEqual(codigo, 0, salida)
+
+    def test_el_reporte_ofrece_el_comando(self):
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            codigo, salida = correr_garita(Path(td.name))
+        self.assertEqual(codigo, 1, salida)
+        self.assertIn("--proponer-exenciones", salida)
+
+    def test_sin_hallazgos_no_propone_nada(self):
+        td = repo_temporal({"x.py": "x = 1\n"})
+        with td:
+            codigo, salida = correr_garita(
+                Path(td.name), "--proponer-exenciones")
+        self.assertEqual(codigo, 0, salida)
+        self.assertNotIn("exenciones:", salida)
+
+    def test_no_se_combina_con_los_otros_modos(self):
+        td = repo_temporal(dict(self.REPO))
+        with td:
+            for extra in (["--historial"], ["--linea-base"],
+                          ["--formato", "sarif"]):
+                codigo, salida = correr_garita(
+                    Path(td.name), "--proponer-exenciones", *extra)
+                self.assertEqual(codigo, 2, (extra, salida))
+
+
 class Fuentes(unittest.TestCase):
     def cargar(self, contenido: str, spec: str = "gen.py:PROHIBIDOS"):
         with TemporaryDirectory() as d:

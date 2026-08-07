@@ -205,6 +205,10 @@ def imprimir(res: Resultado, salida=None, base=None,
                 "hay que limpiar el historial.", "gris"), file=salida)
         print(n("  · Si el hallazgo es legítimo, exenta el archivo en "
                 ".garita.yml CON SU MOTIVO.", "gris"), file=salida)
+        # Decir «exenta con su motivo» sin decir cómo es fricción, y la
+        # fricción termina en «mejor apago el paso».
+        print(n("    «garita --proponer-exenciones» escribe el bloque; el "
+                "motivo lo escribes tú.", "gris"), file=salida)
 
     _bloque_linea_base(base, conocidos, pagadas, n, salida)
 
