@@ -299,8 +299,63 @@ def _jwt_de_demostracion(token: str) -> bool:
     return not (IDENTIDAD & set(k.lower() for k in carga))
 
 
+_BASE64 = re.compile(r"[A-Za-z0-9+/=]{16,}")
+_CABECERA_PEM = re.compile(r"[A-Za-z][A-Za-z-]*:\s*\S")
+_CUERPO_PEGADO = re.compile(
+    r'(?:(?:\\r)?\\n|["\']\s*\+?\s*["\']?)?[A-Za-z0-9+/=]{16,}')
+
+
+def _pem_con_cuerpo(lineas: list[str], indice: int,
+                    inicio: int, fin: int) -> bool:
+    """¿La cabecera PEM viene seguida de llave, o sólo se la menciona?
+
+    Una llave privada de verdad trae su cuerpo en base64 justo después: en
+    la misma línea si viene escapada dentro de un JSON o un .env, o en la
+    siguiente si es un archivo PEM normal. Un docstring que dice «el
+    archivo debe empezar con -----BEGIN RSA PRIVATE KEY-----» trae prosa.
+
+    Sin esta comprobación, medido sobre un repositorio público real, 48 de
+    48 hallazgos de este detector eran una línea de documentación. Ese
+    ruido es exactamente lo que enseña a un equipo a ignorar al guardián,
+    y el día que lo ignora deja pasar la llave de verdad.
+    """
+    # Antes de mirar el cuerpo: si la cabecera viene precedida de una FRASE,
+    # es documentación. Una llave de verdad vive tras `KEY="`, `"key": "` o
+    # `private_key = "` — prefijos de dos o tres palabras. Lo que trae
+    # veinte («:param private_key: [APN only] The URL-encoded representation
+    # of the private key. Strip everything outside of the headers, e.g.») es
+    # el manual explicando el formato con una llave recortada de ejemplo.
+    if len(lineas[indice][:inicio].split()) >= 6:
+        return False
+
+    resto = lineas[indice][fin:]
+    # En la MISMA línea, el cuerpo va pegado a la cabecera o tras un salto
+    # escapado —«…KEY-----\nMIIE…», como se guarda en un .env o un JSON—.
+    # Nunca tras un ESPACIO: un PEM de verdad lleva salto de línea ahí, y
+    # lo que se ve con espacios es documentación enseñando el formato con
+    # una llave recortada («For example, `-----BEGIN RSA PRIVATE KEY-----
+    # MIIEpQ… -----END RSA PRIVATE KEY-----`»). Ésa fue la totalidad de los
+    # 48 hallazgos medidos en un repositorio público real.
+    if _CUERPO_PEGADO.match(resto):
+        return True
+    for siguiente in lineas[indice + 1:indice + 6]:
+        if not siguiente.strip():
+            continue
+        # Una llave CIFRADA trae cabeceras RFC 1421 antes del cuerpo
+        # —«Proc-Type: 4,ENCRYPTED», «DEK-Info: AES-256-CBC,…»— y sigue
+        # siendo una llave. Se saltan y se sigue buscando.
+        if _CABECERA_PEM.match(siguiente.strip()):
+            continue
+        # La línea de cuerpo es base64 y poco más; una frase trae espacios
+        # y palabras cortas.
+        limpia = siguiente.strip().strip("\"'\\,")
+        return bool(_BASE64.match(limpia))
+    return False
+
+
 def buscar(texto: str, archivo: str) -> Iterator[Hallazgo]:
-    for i, linea in enumerate(texto.splitlines(), 1):
+    lineas = texto.splitlines()
+    for i, linea in enumerate(lineas, 1):
         for nombre, rx, por_que, arreglo in PATRONES:
             # `finditer`, no `search`: dos credenciales en una línea son dos
             # hallazgos. Con `search` la segunda quedaba invisible.
@@ -315,6 +370,10 @@ def buscar(texto: str, archivo: str) -> Iterator[Hallazgo]:
                 if es_marcador(sensible or m.group(0)):
                     continue
                 if nombre == "jwt" and _jwt_de_demostracion(m.group(0)):
+                    continue
+                if (nombre == "llave_privada"
+                        and not _pem_con_cuerpo(lineas, i - 1,
+                                                m.start(), m.end())):
                     continue
                 yield _h(archivo, i, nombre, recortar(m.group(0)), por_que, arreglo)
 

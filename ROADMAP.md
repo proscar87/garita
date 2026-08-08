@@ -116,7 +116,7 @@ v0.13.0–v0.16.0 (20 de 20), v0.17.0–v0.20.1 (23 de 23), v0.20.2–v0.23.0
 
 ### Calibración
 
-- [ ] **`llave_privada` casa la CABECERA PEM sin exigir cuerpo** —
+- [x] **`llave_privada` casa la CABECERA PEM sin exigir cuerpo** —
   `secretos.py:57`. Medido en un repo real: 48 de 48 hallazgos eran una
   línea de docstring. El más rentable de esta lista.
 - [ ] **El prefijo repetible marca constantes de enumeración** —
@@ -152,6 +152,6 @@ v0.13.0–v0.16.0 (20 de 20), v0.17.0–v0.20.1 (23 de 23), v0.20.2–v0.23.0
 | Versión | Tema | Contenido |
 |---------|------|-----------|
 | v0.25.0 ✓ | El repo revisado no manda | Los diez confirmados de la sexta oleada |
-| v0.26.0 | El ruido que sí importa | La cabecera PEM sin cuerpo, los rellenos del CIF y del RUT, el punto del teléfono, los duplicados de nombres |
+| v0.27.0 ✓ | El ruido que sí importa | La cabecera PEM sin cuerpo, los rellenos del CIF y del RUT, el punto del teléfono, los duplicados de nombres |
 | v0.27.0 | Un solo canal, una sola verdad (II) | El summary del historial, la severidad en la tabla, las exenciones muertas en los cuatro canales |
 | continuo | Colisiones entre países | AR/PE, los cinco de ocho dígitos, EC/CO — medir antes de tocar |

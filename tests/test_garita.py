@@ -91,7 +91,7 @@ class Secretos(unittest.TestCase):
             '"integrity": "sha512-V7QrIhZmdKPVrJYCTd8loIfBOYEJeyJIkqGIDMZPwPx24"'))
 
     def test_detecta_llave_privada(self):
-        self.assertTrue(self.detecta("-----BEGIN RSA PRIVATE KEY-----"))
+        self.assertTrue(self.detecta("-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY"))
 
     def test_detecta_token_de_proveedor(self):
         for t in ["ghp_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8",
@@ -187,8 +187,8 @@ class RuidoDeReposReales(unittest.TestCase):
         """Todo proyecto que hable TLS versiona llaves de prueba. Marcarlas
         garantiza que el primer día de uso sea rojo."""
         td = repo_temporal({
-            "tests/certs/server.key": "-----BEGIN RSA PRIVATE KEY-----\nabc\n",
-            "src/real.key": "-----BEGIN RSA PRIVATE KEY-----\nabc\n",
+            "tests/certs/server.key": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY\n",
+            "src/real.key": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY\n",
         })
         with td:
             raiz = Path(td.name)
@@ -1096,7 +1096,7 @@ class ElRepoRevisadoNoMandA(unittest.TestCase):
         # «--version» imprimía la versión y salía 0 sin mirar nada. El
         # nombre lo elige quien manda el pull request.
         from garita.cli import main
-        td = repo_temporal({"llave.pem": "-----BEGIN RSA PRIVATE KEY-----\n"})
+        td = repo_temporal({"llave.pem": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY\n"})
         with td:
             raiz = Path(td.name)
             antes = os.getcwd()
@@ -1124,7 +1124,7 @@ class ElRepoRevisadoNoMandA(unittest.TestCase):
         # lo escribe quien manda el PR. Tres líneas apagaban todo y la
         # salida era «✓ nada que reportar» sin mencionarlo.
         td = repo_temporal({
-            "llave.pem": "-----BEGIN RSA PRIVATE KEY-----\n",
+            "llave.pem": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY\n",
             ".garita.yml": "detectores:\n  - secretos: false\n",
         })
         with td:
@@ -1171,7 +1171,7 @@ class LasExcepcionesSeDocumentan(unittest.TestCase):
     que cada una nazca con su justificación escrita."""
 
     REPO = {"datos.txt": "CLABE 002180000645829179\nRFC GOPE800101A18\n",
-            "llave.pem": "-----BEGIN RSA PRIVATE KEY-----\n"}
+            "llave.pem": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY\n"}
 
     def test_propone_el_bloque_agrupado_por_archivo(self):
         td = repo_temporal(dict(self.REPO))
@@ -1241,6 +1241,54 @@ class LasExcepcionesSeDocumentan(unittest.TestCase):
                 codigo, salida = correr_garita(
                     Path(td.name), "--proponer-exenciones", *extra)
                 self.assertEqual(codigo, 2, (extra, salida))
+
+
+class LaCabeceraPemNoEsLaLlave(unittest.TestCase):
+    """v0.27.0: medido sobre un repositorio público real, 48 de 48
+    hallazgos de `llave_privada` eran una línea de documentación que
+    mencionaba el formato. Ese ruido es lo que enseña a un equipo a
+    ignorar al guardián — y el día que lo ignora deja pasar la llave."""
+
+    CUERPO = ("MIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qW"
+              "eRtY")
+
+    def test_mencionar_el_formato_no_es_una_llave(self):
+        c = self.CUERPO
+        for texto in (
+            "Expects a PEM file starting with -----BEGIN RSA PRIVATE KEY-----",
+            "# El archivo debe empezar con -----BEGIN PRIVATE KEY-----",
+            "-----BEGIN RSA PRIVATE KEY-----",
+            "-----BEGIN RSA PRIVATE KEY-----\nEsa es la cabecera a buscar.\n",
+            # Las dos formas reales del repositorio que se midió: el ejemplo
+            # recortado dentro de un docstring, con el cuerpo separado por
+            # un espacio…
+            f":param private_key: For example, `-----BEGIN RSA PRIVATE "
+            f"KEY----- {c}. -----END RSA PRIVATE KEY-----`",
+            # …y pegado, que es la otra mitad. Ahí lo que delata es la
+            # frase que va delante.
+            f"        :param private_key: The URL-encoded representation of "
+            f"the private key. Strip everything outside of the headers, "
+            f"e.g. `-----BEGIN RSA PRIVATE KEY-----{c}",
+        ):
+            self.assertFalse(list(buscar(texto, "docs.md")), texto[:40])
+
+    def test_la_llave_de_verdad_sigue_sonando(self):
+        c = self.CUERPO
+        for texto in (
+            f"-----BEGIN RSA PRIVATE KEY-----\n{c}\n-----END RSA PRIVATE KEY-----",
+            # Cifrada: trae cabeceras RFC 1421 antes del cuerpo.
+            f"-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\n"
+            f"DEK-Info: AES-256-CBC,1F2A\n\n{c}\n",
+            # En un .env o un JSON, con los saltos escapados.
+            f'KEY="-----BEGIN RSA PRIVATE KEY-----\\n{c}"',
+            f'{{"key": "-----BEGIN PRIVATE KEY-----{c}"}}',
+            f"-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk{c}\n",
+            # En código: una asignación y una llamada con varios argumentos
+            # llevan prefijo corto, no una frase.
+            f'private_key = "-----BEGIN RSA PRIVATE KEY-----\\n{c}"',
+            f'config.set("tls", "key", "-----BEGIN RSA PRIVATE KEY-----\\n{c}")',
+        ):
+            self.assertTrue(list(buscar(texto, "llave.pem")), texto[:44])
 
 
 class Fuentes(unittest.TestCase):
@@ -2691,7 +2739,7 @@ class HistorialCompleto(unittest.TestCase):
             subprocess.run(["git", "checkout", "-qb", "fuga"],
                            cwd=origen, check=True)
             (origen / "colado.pem").write_text(
-                "-----BEGIN RSA PRIVATE KEY-----\n", encoding="utf-8")
+                "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY\n", encoding="utf-8")
             subprocess.run(["git", "add", "-A"], cwd=origen, check=True)
             self._commit(origen, "secreto en rama")
             subprocess.run(["git", "checkout", "-q", "main"],
@@ -2711,7 +2759,7 @@ class HistorialCompleto(unittest.TestCase):
             subprocess.run(["git", "init", "-q", "-b", "main"],
                            cwd=raiz, check=True)
             (raiz / "peña.pem").write_text(
-                "-----BEGIN RSA PRIVATE KEY-----\n", encoding="utf-8")
+                "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY\n", encoding="utf-8")
             subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
             self._commit(raiz, "entra")
             subprocess.run(["git", "rm", "-q", "peña.pem"],
@@ -2749,7 +2797,7 @@ class AlcanceDelHistorial(unittest.TestCase):
             subprocess.run(["git", "checkout", "-q", "--detach"],
                            cwd=raiz, check=True)
             (raiz / "secreto.pem").write_text(
-                "-----BEGIN RSA PRIVATE KEY-----\n", encoding="utf-8")
+                "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY\n", encoding="utf-8")
             subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
             self._commit(raiz, "fuga")
             codigo, salida = correr_garita(raiz, "--historial")
@@ -2781,7 +2829,7 @@ class AlcanceDelHistorial(unittest.TestCase):
                            cwd=raiz, check=True)
             (raiz / "tests").mkdir()
             (raiz / 'tests/pe"a.pem').write_text(
-                "-----BEGIN RSA PRIVATE KEY-----\n", encoding="utf-8")
+                "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY\n", encoding="utf-8")
             subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
             self._commit(raiz, "fixture")
             codigo, salida = correr_garita(raiz, "--historial")
@@ -2801,7 +2849,7 @@ class AlcanceDelHistorial(unittest.TestCase):
             (raiz / "tests").mkdir()
             (raiz / "src").mkdir()
             (raiz / "tests/fixture.pem").write_text(
-                "-----BEGIN RSA PRIVATE KEY-----\n", encoding="utf-8")
+                "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY\n", encoding="utf-8")
             subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
             self._commit(raiz, "nace en tests")
             subprocess.run(["git", "mv", "tests/fixture.pem",
@@ -2928,7 +2976,7 @@ class RegresionesDelHistorial(unittest.TestCase):
         td = repo_temporal({
             "cacert.pem": ("# Subject: CN=Chambers of Commerce Root, "
                            "CIF A12345674\n"
-                           "-----BEGIN RSA PRIVATE KEY-----\nabc\n"),
+                           "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qWeRtY\n"),
         })
         with td:
             raiz = Path(td.name)
