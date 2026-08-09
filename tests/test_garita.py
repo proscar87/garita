@@ -1180,9 +1180,11 @@ class LasExcepcionesSeDocumentan(unittest.TestCase):
                 Path(td.name), "--proponer-exenciones")
         self.assertEqual(codigo, 0, salida)
         self.assertIn("exenciones:", salida)
-        self.assertIn("- archivo: datos.txt", salida)
+        # Anclado desde v0.29.0: un archivo de la raíz se nombra «/x» para
+        # que la propuesta no exente además sus homónimos de subcarpetas.
+        self.assertIn("- archivo: /datos.txt", salida)
         self.assertIn("detectores: clabe, rfc", salida)
-        self.assertIn("- archivo: llave.pem", salida)
+        self.assertIn("- archivo: /llave.pem", salida)
         # Ningún valor: la exención se define por archivo y detector.
         self.assertNotIn("002180000645829179", salida)
         self.assertNotIn("GOPE800101A18", salida)
@@ -3767,3 +3769,53 @@ class SeisManerasDeAprobarSinMirar(unittest.TestCase):
             subprocess.run(["git", "rm", "-q", "viejo.env"], cwd=raiz, check=True)
             codigo, salida = correr_garita(raiz)
         self.assertEqual(codigo, 0, salida)
+
+
+class LaExencionNombraLoQueExenta(unittest.TestCase):
+    """v0.29.0: `casa_ruta` implementaba dos de las tres reglas de
+    gitignore. Faltaba el ANCLAJE, y era el único caso que el usuario no
+    podía expresar: «config.json» exentaba también el de cualquier
+    subcarpeta y no había forma de decir «sólo el de la raíz». Por eso la
+    propuesta de --proponer-exenciones salía más ancha que su hallazgo."""
+
+    def test_la_barra_inicial_ancla_a_la_raiz(self):
+        from garita.nucleo import casa_ruta
+        self.assertTrue(casa_ruta("config.json", "/config.json"))
+        self.assertFalse(casa_ruta("sub/config.json", "/config.json"))
+        self.assertFalse(casa_ruta("a/b/config.json", "/config.json"))
+        # Anclado con comodín, y anclado con más de un segmento.
+        self.assertTrue(casa_ruta("vectores.json", "/*.json"))
+        self.assertFalse(casa_ruta("sub/vectores.json", "/*.json"))
+        self.assertTrue(casa_ruta("docs/api.md", "/docs/*.md"))
+        self.assertFalse(casa_ruta("v1/docs/api.md", "/docs/*.md"))
+
+    def test_las_otras_dos_reglas_de_gitignore_no_cambian(self):
+        # El contrapeso que importa: anclar TODO patrón fue la regresión de
+        # v0.18.0 que rompió «*.test.ts» en cada repo que lo usaba, y llevó
+        # a un consumidor de 53 hallazgos a 320.
+        from garita.nucleo import casa_ruta
+        self.assertTrue(casa_ruta("src/lib/parse.test.ts", "*.test.ts"))
+        self.assertTrue(casa_ruta("sub/dir/README.md", "README.md"))
+        self.assertTrue(casa_ruta("tests/a/b/c.py", "tests/**"))
+        self.assertFalse(casa_ruta("tests_reales/a.py", "tests*"))
+
+    def test_la_propuesta_no_exenta_mas_de_lo_que_encontro(self):
+        # De punta a punta: se pega SÓLO la entrada de la raíz, con su
+        # motivo, y el homónimo de la subcarpeta sigue siendo hallazgo.
+        clabe = "CLABE 002180000645829179\n"
+        with repo_temporal({"vectores.json": clabe,
+                            "sub/vectores.json": clabe}) as td:
+            raiz = Path(td)
+            codigo, propuesta = correr_garita(raiz, "--proponer-exenciones")
+            self.assertEqual(codigo, 0)
+            self.assertIn("- archivo: /vectores.json", propuesta)
+            (raiz / ".garita.yml").write_text(
+                "exenciones:\n  - archivo: /vectores.json\n"
+                "    motivo: vectores oficiales del catálogo público\n"
+                "    detectores: clabe\n", encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz)
+        self.assertEqual(codigo, 1, salida)
+        # El de la subcarpeta sigue siendo hallazgo; el de la raíz, exento.
+        self.assertIn("sub/vectores.json", salida)
+        self.assertNotIn("\nvectores.json", salida)

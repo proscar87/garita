@@ -541,7 +541,14 @@ def _proponer_exenciones(res, raiz: Path) -> int:
     print("exenciones:")
     for archivo in sorted(por_archivo):
         dets = ", ".join(sorted(por_archivo[archivo]))
-        print(f"  - archivo: {archivo}")
+        # Un archivo de la RAÍZ se nombra anclado. Sin la barra inicial el
+        # patrón no tiene «/», y eso casa el NOMBRE a cualquier profundidad:
+        # la exención propuesta salía más ancha que el hallazgo que la
+        # produjo y tapaba en silencio un homónimo de cualquier subcarpeta,
+        # hoy o el día que alguien lo agregue. Lo que la herramienta propone
+        # nunca puede exentar más de lo que encontró.
+        patron = archivo if "/" in archivo else f"/{archivo}"
+        print(f"  - archivo: {patron}")
         print(f"    motivo:")
         print(f"    detectores: {dets}")
     return 0

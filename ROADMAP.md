@@ -30,9 +30,9 @@ v0.25.0–v0.27.0 (los diez de la sexta).
 
 ## 1. Confirmado y reproducido por dos agentes independientes
 
-Seis de los siete quedaron **saldados en v0.28.0**; el del anclaje va aparte
-en v0.29.0 porque cambia la semántica de `casa_ruta`, y eso se mide contra
-los cuatro consumidores antes de mover el tag `v0`.
+Los siete quedaron saldados: seis en **v0.28.0** y el del anclaje en
+**v0.29.0**, aparte porque cambia la semántica de `casa_ruta` y eso se mide
+contra los consumidores antes de mover el tag `v0`.
 
 ### Las regresiones de la víspera
 
@@ -58,7 +58,7 @@ los cuatro consumidores antes de mover el tag `v0`.
   sin exención muerta. *Arreglo: distinguir la clave ausente de la lista
   vacía escrita a propósito y rechazar ésta con `ConfigInvalida`.*
 
-- [ ] **La propuesta de `--proponer-exenciones` sale más ancha que su
+- [x] **La propuesta de `--proponer-exenciones` sale más ancha que su
   hallazgo** — `cli.py:544`, *media*. Para un archivo de la raíz el patrón
   no lleva «/», y `casa_ruta` lo interpreta con semántica gitignore: casa
   el **nombre a cualquier profundidad**. Quien pega el bloque creyendo

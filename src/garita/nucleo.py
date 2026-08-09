@@ -407,8 +407,22 @@ def casa_ruta(archivo: str, patron: str) -> bool:
     vectores de prueba— en cada repo que lo usaba. La regla de gitignore
     es la que la gente ya tiene en la cabeza, y distingue los dos casos
     sin sorprender a nadie.
+
+    La tercera regla de gitignore es el ANCLAJE: una barra inicial ata el
+    patrón a la raíz. Faltaba, y era el único caso que el usuario no podía
+    expresar — «config.json» exentaba también el de cualquier subcarpeta y
+    no había forma de decir «sólo el de la raíz». Por eso la propuesta de
+    `--proponer-exenciones` salía más ancha que el hallazgo que la motivó.
     """
-    if "/" not in patron:
+    if patron.startswith("/"):
+        # Estrictamente aditivo: hoy un patrón con barra inicial no casa
+        # nada y sale denunciado como exención muerta, así que ningún
+        # `.garita.yml` existente cambia de comportamiento.
+        patron = patron[1:]
+        if "/" not in patron:
+            return "/" not in archivo and fnmatch.fnmatch(archivo, patron)
+        # Con más barras cae al camino por segmentos, que ya está anclado.
+    elif "/" not in patron:
         return fnmatch.fnmatch(archivo.rsplit("/", 1)[-1], patron)
 
     partes_a = archivo.split("/")

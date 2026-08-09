@@ -152,7 +152,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.28.0
+    rev: v0.29.0
     hooks:
       - id: garita
 ```
@@ -422,7 +422,9 @@ nombre a cualquier profundidad (`*.test.ts` cubre
 `*` no cruza las barras y `**` sí. Para una carpeta entera se escribe
 `tests/**` — `tests*` no casa nada y sale reportado como exención que no
 aplicó, en vez de tragarse en silencio `tests_reales/` y todo lo que empiece
-igual.
+igual. Y una **barra inicial ancla a la raíz**: `/config.json` es el de la
+raíz y sólo ése, mientras que `config.json` cubriría además el de cualquier
+subcarpeta. Por eso `--proponer-exenciones` lo emite anclado.
 
 ---
 
@@ -550,7 +552,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.28.0
+    rev: v0.29.0
     hooks:
       - id: garita
 ```
