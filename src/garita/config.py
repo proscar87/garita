@@ -274,6 +274,22 @@ def cargar(raiz: Path, nombre: str = NOMBRE_ARCHIVO) -> Config:
         # coincidía, así que tampoco salía como exención muerta.
         dets = e.get("detectores", "")
         if isinstance(dets, (list, tuple)):
+            # «detectores: []» escrito a propósito se RECHAZA. La clave
+            # ausente significa «todos» —es el valor por omisión de
+            # `Exencion`—, pero una lista vacía se lee con el ojo como
+            # «ninguno», y hacía lo contrario: ampliaba la exención a todo
+            # el archivo, sin aviso y sin salir como exención muerta. Antes
+            # de que «[]» se leyera como lista, la cadena «[]» no casaba
+            # ningún detector y el reporte lo denunciaba; al arreglar la
+            # lista vacía de nivel superior, esta escritura pasó a aprobar
+            # el archivo entero en silencio.
+            if "detectores" in e and not dets:
+                raise ConfigInvalida(
+                    f"la exención de «{archivo}» declara «detectores» vacío, "
+                    f"y vacío significa TODOS los detectores —lo contrario "
+                    f"de lo que parece—. Si querías exentar el archivo "
+                    f"completo, quita la clave; si no, nombra los detectores."
+                )
             dets = ",".join(str(d) for d in dets)
         elif not isinstance(dets, str):
             raise ConfigInvalida(

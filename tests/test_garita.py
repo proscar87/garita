@@ -3611,3 +3611,159 @@ class DeteccionViva(unittest.TestCase):
             muertos = [e for e in esperados
                        if f" {e} " not in salida and f" {e}\n" not in salida]
             self.assertEqual(muertos, [], f"detectores ciegos: {muertos}")
+
+
+class SeisManerasDeAprobarSinMirar(unittest.TestCase):
+    """Séptima oleada (v0.28.0). Seis caminos por los que Garita salía con
+    código 0 sobre un dato que sí estaba: tres de ellos abiertos por los
+    arreglos de la víspera. Cada prueba de aquí es una versión que se
+    publicó rota."""
+
+    CUERPO = ("MIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBnM1qW"
+              "eRtY")
+
+    def test_la_llave_de_cuenta_de_servicio_minificada_suena(self):
+        # v0.27.0 contaba TOKENS separados por espacio para distinguir la
+        # prosa, y un JSON de cuenta de servicio de Google en una línea
+        # —la forma canónica en que esa llave se filtra— llega a ocho
+        # antes de «"private_key": "». La llave desaparecía con código 0.
+        c = self.CUERPO
+        for texto in (
+            '{"type": "service_account", "project_id": "p", '
+            '"private_key_id": "k", "private_key": '
+            '"-----BEGIN PRIVATE KEY-----\\n%s\\n-----END PRIVATE KEY-----"}' % c,
+            "CREDS = {'type': 'service_account', 'project': 'p', 'key_id': "
+            "'k', 'private_key': '-----BEGIN PRIVATE KEY-----\\n%s'}" % c,
+            'GCP_SA_KEY: \'{"type": "service_account", "project_id": "p", '
+            '"private_key": "-----BEGIN PRIVATE KEY-----\\n%s"}\'' % c,
+        ):
+            self.assertTrue(list(buscar(texto, "sa.json")), texto[:60])
+
+    def test_la_frase_que_termina_en_dos_puntos_sigue_callada(self):
+        # La comilla es obligatoria en `_ASIGNACION`: sin ella vuelve el
+        # ruido de la documentación que anuncia el formato.
+        self.assertFalse(list(buscar(
+            "Provide the contents of a file that begins with: "
+            "-----BEGIN RSA PRIVATE KEY-----%s" % self.CUERPO, "docs.md")))
+
+    def test_la_llave_cifrada_y_la_de_pgp_suenan(self):
+        # `openssl genpkey -aes256`, `openssl genrsa -aes256` y `openssl
+        # pkcs8 -topk8` escriben ENCRYPTED PRIVATE KEY: la forma más común
+        # hoy de una llave con contraseña, y no casaba. Y el «PGP» que el
+        # patrón anunciaba era letra muerta, porque gpg escribe « BLOCK».
+        c = self.CUERPO
+        for texto in (
+            "-----BEGIN ENCRYPTED PRIVATE KEY-----\n%s\n" % c,
+            "-----BEGIN DSA PRIVATE KEY-----\n%s\n" % c,
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n%s\n" % c,
+        ):
+            self.assertTrue(list(buscar(texto, "llave.pem")), texto[:45])
+
+    def test_el_valor_pelon_con_prefijo_punteado_se_reporta(self):
+        # Gemela de la de v0.24.0, pero en la rama SIN comillas — la que
+        # existe justo para el .env, que es donde estos tokens viven. El
+        # arreglo de entonces curó la entrecomillada y dejó viva la fuga.
+        for linea in (
+            "VAULT_TOKEN=hvs.CAESIHrGkQ9tXbW2yL5pAcXdEfGhJkLmNoPqRsTuVwXyZ01",
+            "DOPPLER_TOKEN=dp.st.prd.aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789ab",
+            "STRIPE_SECRET=cs.live.9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f00",
+        ):
+            self.assertTrue(
+                list(buscar_asignaciones(linea + "\n", ".env")), linea)
+
+    def test_la_referencia_de_codigo_sigue_callada(self):
+        # El contrapeso: lo que se apretó no puede volver a morder el
+        # código, que es lo que pone ahí quien hizo las cosas bien.
+        for linea in ("password=config.db_password",
+                      "token=settings.API_KEY_PRODUCTION",
+                      "secret=os.environ[SECRET]",
+                      "api_key=c.Config.Password"):
+            self.assertFalse(
+                list(buscar_asignaciones(linea + "\n", ".env")), linea)
+
+    def test_detectores_vacio_no_exenta_el_archivo_entero(self):
+        # Regresión de v0.26.1: al hacer que «[]» se leyera como lista,
+        # «detectores: []» pasó de no casar nada —y salir denunciado como
+        # exención muerta— a casar TODO. Se lee como «ninguno» y silencia
+        # el archivo completo. Se rechaza ruidoso: código 2, no 0.
+        for escritura in ("    detectores: []\n", "    detectores:\n"):
+            archivos = {
+                "app.py": 'TOKEN = "ghp_' + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8" + '"\n',
+                ".garita.yml": ("exenciones:\n  - archivo: app.py\n"
+                                "    motivo: pendiente\n" + escritura),
+            }
+            with repo_temporal(archivos) as td:
+                codigo, salida = correr_garita(Path(td))
+            self.assertEqual(codigo, 2, escritura)
+            self.assertIn("detectores", salida)
+
+    def test_la_exencion_acotada_sigue_exentando(self):
+        # El contrapeso del anterior: nombrar los detectores funciona, y
+        # «exenciones: []» de nivel superior —lo que arregló v0.26.1—
+        # sigue leyéndose como una lista vacía y no como la cadena «[]».
+        secreto = 'TOKEN = "ghp_' + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8" + '"\n'
+        with repo_temporal({
+            "app.py": secreto,
+            ".garita.yml": ("exenciones:\n  - archivo: app.py\n"
+                            "    motivo: llave de prueba rotada\n"
+                            "    detectores: llave_proveedor\n"),
+        }) as td:
+            codigo, _ = correr_garita(Path(td))
+        self.assertEqual(codigo, 0)
+        with repo_temporal({"limpio.txt": "nada\n",
+                            ".garita.yml": "exenciones: []\n"}) as td:
+            codigo, _ = correr_garita(Path(td))
+        self.assertEqual(codigo, 0)
+
+    def test_el_bom_tambien_usa_el_respaldo_por_byte(self):
+        # El «CSV UTF-8» de Excel SIEMPRE escribe BOM, así que la rama que
+        # más necesitaba el respaldo cp1252 era justo la que no lo tenía:
+        # un byte Latin-1 volvía «Cédula» en «C?dula», el contexto dejaba
+        # de casar, y el archivo se contaba como REVISADO.
+        from garita.nucleo import descifrar
+        bom = b"\xef\xbb\xbf"
+        cedula = "1719141770"
+        for crudo in (
+            bom + ("C\xe9dula: %s\n" % cedula).encode("cp1252"),
+            # Mezclado: la mitad UTF-8, una línea pegada desde Excel.
+            bom + "Año: 2026\n".encode("utf-8")
+                + ("C\xe9dula: %s\n" % cedula).encode("cp1252"),
+        ):
+            texto = descifrar(crudo)
+            self.assertIsNotNone(texto)
+            self.assertIn("Cédula", texto)
+
+    def test_lo_rastreado_y_ausente_del_arbol_se_lee_del_indice(self):
+        # `git sparse-checkout` —soportado por actions/checkout— deja el
+        # archivo en el índice y en HEAD, o sea que `git push` lo publica,
+        # pero fuera del disco. Garita decidía con `is_file()` y salía con
+        # «✓ nada que reportar, 1 omitidos (binarios o muy grandes)».
+        llave = "AKIA" + "QWERTYUIOPASDFGH"
+        with repo_temporal({"src/main.py": "print('hola')\n",
+                            "config/prod.env": "AWS_ACCESS_KEY_ID=%s\n" % llave}) as td:
+            raiz = Path(td)
+            subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                            "commit", "-qm", "inicial"], cwd=raiz, check=True)
+            # Sin sparse-checkout (que necesita un git reciente y config
+            # extra), la vía equivalente y más directa: borrar del disco
+            # sin `git rm`. El índice y HEAD quedan intactos.
+            (raiz / "config" / "prod.env").unlink()
+            self.assertIn("config/prod.env",
+                          subprocess.run(["git", "ls-files"], cwd=raiz,
+                                         capture_output=True, text=True).stdout)
+            codigo, salida = correr_garita(raiz)
+        self.assertEqual(codigo, 1, salida)
+        self.assertIn("prod.env", salida)
+
+    def test_el_borrado_de_verdad_no_inventa_hallazgos(self):
+        # El contrapeso: un `git rm` sale de `git ls-files`, así que la
+        # rama nueva no se dispara sobre borrados legítimos.
+        llave = "AKIA" + "QWERTYUIOPASDFGH"
+        with repo_temporal({"a.txt": "hola\n",
+                            "viejo.env": "AWS_ACCESS_KEY_ID=%s\n" % llave}) as td:
+            raiz = Path(td)
+            subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                            "commit", "-qm", "inicial"], cwd=raiz, check=True)
+            subprocess.run(["git", "rm", "-q", "viejo.env"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz)
+        self.assertEqual(codigo, 0, salida)

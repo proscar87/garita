@@ -54,7 +54,15 @@ PATRONES: list[tuple[str, re.Pattern[str], str, str]] = [
     ),
     (
         "llave_privada",
-        re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----"),
+        # La etiqueta va abierta a propósito. Enumerarla —«RSA |EC |OPENSSH
+        # |PGP »— dejaba fuera `ENCRYPTED PRIVATE KEY`, que es lo que emiten
+        # `openssl genpkey -aes256`, `openssl genrsa -aes256` y `openssl
+        # pkcs8 -topk8`: o sea, la forma más común HOY de una llave con
+        # contraseña. Y la alternativa `PGP ` era letra muerta, porque gpg
+        # escribe `-----BEGIN PGP PRIVATE KEY BLOCK-----` y el patrón exigía
+        # los guiones pegados a `PRIVATE KEY`. Una llave cifrada sigue
+        # siendo una llave: la contraseña se filtra aparte, o es débil.
+        re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----"),
         "Una llave privada da acceso directo, y a diferencia de una "
         "contraseña nadie la cambia por rutina.",
         ARREGLO_LLAVE,
@@ -303,6 +311,7 @@ _BASE64 = re.compile(r"[A-Za-z0-9+/=]{16,}")
 _CABECERA_PEM = re.compile(r"[A-Za-z][A-Za-z-]*:\s*\S")
 _CUERPO_PEGADO = re.compile(
     r'(?:(?:\\r)?\\n|["\']\s*\+?\s*["\']?)?[A-Za-z0-9+/=]{16,}')
+_ASIGNACION = re.compile(r"""[:=]\s*["'`]\s*$""")
 
 
 def _pem_con_cuerpo(lineas: list[str], indice: int,
@@ -325,7 +334,17 @@ def _pem_con_cuerpo(lineas: list[str], indice: int,
     # veinte («:param private_key: [APN only] The URL-encoded representation
     # of the private key. Strip everything outside of the headers, e.g.») es
     # el manual explicando el formato con una llave recortada de ejemplo.
-    if len(lineas[indice][:inicio].split()) >= 6:
+    #
+    # Pero el conteo mide TOKENS, no palabras: un JSON de cuenta de servicio
+    # de Google minificado en una línea —la forma canónica en que esa llave
+    # se filtra— llega a ocho antes de `"private_key": "` sin ser una frase,
+    # y la llave desaparecía entera con código 0. Si el prefijo termina en
+    # `: "` o `= "`, la cabecera vive DENTRO de una cadena: eso es una
+    # asignación, no el manual. La comilla es obligatoria en el patrón: sin
+    # ella la prosa que termina en dos puntos («…string that begins with:
+    # -----BEGIN RSA PRIVATE KEY-----MIIE…») vuelve a sonar.
+    prefijo = lineas[indice][:inicio]
+    if not _ASIGNACION.search(prefijo) and len(prefijo.split()) >= 6:
         return False
 
     resto = lineas[indice][fin:]
@@ -424,8 +443,18 @@ NOMBRES_SOSPECHOSOS = re.compile(
 #     que delatan una llamada o un literal de diccionario), y
 #   · no parecer una referencia (`config.get`, `os.environ[...]`, `$VAR`,
 #     `${VAR}`, `%s`), que es lo que pone ahí quien hizo las cosas bien.
+#
+# La referencia punteada se exige COMPLETA y de segmentos cortos. Con el
+# `\w+[.\[]` de antes bastaba palabra+punto para descartar el valor, y los
+# tokens de Vault (`hvs.CAESIHrG…`), Doppler (`dp.st.prd.…`) y Stripe
+# (`cs.live.…`) tienen exactamente esa forma — y en un .env van SIN comillas
+# por convención, o sea en esta rama, que existe justo para el .env. El
+# arreglo de v0.24.0 devolvió esas credenciales a la rama entrecomillada y
+# dejó viva la fuga aquí. Una referencia real (`config.db_password`,
+# `settings.API_KEY`) tiene todos sus segmentos cortos y ocupa el valor
+# entero; un token trae un blob de ochenta caracteres en el segundo.
 _ES_REFERENCIA = re.compile(
-    r"(?i)^(\w+[.\[]|%s$|None$|null$|true$|false$)"
+    r"(?i)^(\w+\[|\w{1,24}(\.\w{1,24})+$|%s$|None$|null$|true$|false$)"
 )
 NOMBRES_SOSPECHOSOS_PELON = re.compile(
     r"(?i)(?:^|[\s])(?:[A-Za-z0-9]+[_.-])*"

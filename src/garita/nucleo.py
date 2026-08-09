@@ -295,7 +295,18 @@ def descifrar(crudo: bytes) -> str | None:
     for marca, codificacion in _BOM:
         if crudo.startswith(marca):
             try:
-                return _nfc(crudo.decode(codificacion, "replace"))
+                # El MISMO manejador por byte que la rama sin marca, y por
+                # la misma razón: el «CSV UTF-8» de Excel siempre escribe
+                # BOM, así que la rama que más necesita el respaldo era
+                # justo la que no lo tenía. Con `replace`, un byte Latin-1
+                # pegado a un archivo con marca volvía «Cédula» en
+                # «C?dula» y todo detector con `exige_contexto` quedaba
+                # ciego sobre un archivo que el resumen contaba como
+                # revisado. En UTF-16/32 el byte suelto no es cp1252, así
+                # que ahí `replace` se queda.
+                manejador = ("garita_cp1252"
+                             if codificacion == "utf-8-sig" else "replace")
+                return _nfc(crudo.decode(codificacion, manejador))
             except (UnicodeDecodeError, LookupError):
                 return None
 
@@ -338,6 +349,31 @@ class Ilegible(Exception):
     (binario o muy grande)», sin nombrar el archivo y sin tocar el
     veredicto. Se aprobaba con 0 algo que nadie miró — la marca verde sin
     revisión que esta herramienta existe para no producir."""
+
+
+def blob_del_indice(raiz: Path, rel: str) -> bytes | None:
+    """El contenido que git PUBLICARÍA de una ruta que no está en el disco.
+
+    `revisar` enumera desde el índice (`git ls-files`) y decidía con el
+    disco (`is_file`). Cuando las dos cosas no coinciden —`git
+    sparse-checkout`, que `actions/checkout` soporta; un `rm` sin `git rm`—
+    el contenido sigue en el índice y en HEAD, o sea que `git push` lo
+    publica, y Garita lo daba por inexistente: lo contaba como «omitido
+    (binario o muy grande)», no lo nombraba nunca, y aprobaba con código 0
+    un repositorio que publica una llave.
+
+    Devuelve None cuando no hay blob que leer —un gitlink de submódulo, o
+    una ruta que de verdad ya no está en el índice—, para que ese caso siga
+    cayendo en el camino de omitidos sin ruido.
+    """
+    try:
+        salida = subprocess.run(
+            ["git", "cat-file", "blob", f":{rel}"],
+            cwd=raiz, capture_output=True,
+        )
+    except OSError:
+        return None
+    return salida.stdout if salida.returncode == 0 else None
 
 
 def leer(ruta: Path) -> str | None:
@@ -499,29 +535,52 @@ def revisar(
             # que niega el paso.
             if _existe_pero_no_se_alcanza(ruta):
                 res.ilegibles.append((rel, "no se pudo alcanzar la ruta"))
-            res.archivos_omitidos += 1
-            continue
-        revisable, motivo = es_revisable(ruta)
-        if not revisable:
-            res.archivos_omitidos += 1
-            if "tope" in motivo:
-                res.omitidos_grandes.append((rel, motivo))
-            elif motivo == "ilegible":
-                # `es_revisable` ya calculaba este motivo al fallar el
-                # stat, y `revisar` lo tiraba: sólo miraba «tope».
-                res.ilegibles.append((rel, "no se pudo leer su tamaño"))
-            continue
-        try:
-            texto = leer(ruta)
-        except Ilegible as e:
-            # Se dice CON NOMBRE y decide el veredicto: no se aprueba lo
-            # que no se pudo mirar.
-            res.ilegibles.append((rel, str(e)))
-            res.archivos_omitidos += 1
-            continue
-        if texto is None:
-            res.archivos_omitidos += 1
-            continue
+                res.archivos_omitidos += 1
+                continue
+            # git lo rastrea y no está en el árbol de trabajo. El CONTENIDO
+            # sigue en el índice y se publica con el push, así que se lee de
+            # ahí en vez de darlo por inexistente. Ésta es la rama que
+            # aprobaba con código 0 un repositorio en sparse-checkout.
+            crudo = blob_del_indice(raiz, rel)
+            if crudo is None:
+                res.archivos_omitidos += 1
+                continue
+            revisable, motivo = ruta_revisable(Path(rel))
+            if not revisable:
+                res.archivos_omitidos += 1
+                continue
+            if len(crudo) > MAX_BYTES:
+                res.archivos_omitidos += 1
+                res.omitidos_grandes.append(
+                    (rel, f"pesa {len(crudo) // 1_000_000} MB, más del tope "
+                          f"de {MAX_BYTES // 1_000_000} MB"))
+                continue
+            texto = descifrar(crudo)
+            if texto is None:
+                res.archivos_omitidos += 1
+                continue
+        else:
+            revisable, motivo = es_revisable(ruta)
+            if not revisable:
+                res.archivos_omitidos += 1
+                if "tope" in motivo:
+                    res.omitidos_grandes.append((rel, motivo))
+                elif motivo == "ilegible":
+                    # `es_revisable` ya calculaba este motivo al fallar el
+                    # stat, y `revisar` lo tiraba: sólo miraba «tope».
+                    res.ilegibles.append((rel, "no se pudo leer su tamaño"))
+                continue
+            try:
+                texto = leer(ruta)
+            except Ilegible as e:
+                # Se dice CON NOMBRE y decide el veredicto: no se aprueba lo
+                # que no se pudo mirar.
+                res.ilegibles.append((rel, str(e)))
+                res.archivos_omitidos += 1
+                continue
+            if texto is None:
+                res.archivos_omitidos += 1
+                continue
         res.archivos_revisados += 1
 
         # Las exenciones cuyo PATRÓN casa este archivo se calculan UNA vez:
