@@ -3830,20 +3830,42 @@ class LosCuatroCanalesNoCallabanLoMismo(unittest.TestCase):
     CLABE = "002180000645829179"
 
     def _repo(self):
+        # Sin la barra en el nombre: NTFS la prohíbe igual que los dos
+        # puntos, así que el archivo no se puede ni crear en Windows. El
+        # escapado se prueba aparte, sin tocar el disco, para que corra en
+        # las cinco plataformas en vez de saltarse justo la que importa.
         return repo_temporal({
             "datos.txt": f"CLABE {self.CLABE}\n",
-            "tubo|corte.py": f"CLABE {self.CLABE}\n",
             ".garita.yml": ("detectores:\n  - curp: false\n"
                             "exenciones:\n"
                             "  - archivo: no_existe_jamas.txt\n"
                             "    motivo: exención muerta a propósito\n"),
         })
 
-    def test_el_resumen_del_job_lleva_severidad_y_escapa_la_barra(self):
-        # La barra parte una fila de GFM AUNQUE esté en un span de código:
-        # una fila de 5 celdas contra un encabezado de 4 hacía que GitHub
-        # truncara y enlazara a una ruta inexistente. Y el nombre de
-        # archivo lo elige quien manda el PR.
+    def test_la_barra_del_nombre_no_parte_la_fila_de_la_tabla(self):
+        # Sin filesystem: en GFM la barra parte la celda AUNQUE esté dentro
+        # de un span de código, y el nombre de archivo lo elige quien manda
+        # el PR. Una fila de cinco celdas contra un encabezado de cuatro
+        # hacía que GitHub truncara y enlazara a una ruta inexistente.
+        from garita.nucleo import Hallazgo, Resultado
+        from garita.reporte import resumen_markdown
+        res = Resultado(archivos_revisados=2, hallazgos=[
+            Hallazgo(archivo="src/tubo|corte.py", linea=7, detector="clabe",
+                     que="0021…79", por_que="x", como_arreglar="y"),
+            Hallazgo(archivo="ok.py", linea=1, detector="rfc", que="GOPE…18",
+                     por_que="x", como_arreglar="y", severidad="aviso"),
+        ])
+        texto = resumen_markdown(res)
+        self.assertIn(r"`src/tubo\|corte.py`", texto)
+        filas = [l for l in texto.splitlines() if l.startswith("| ")]
+        anchos = {l.count("|") - l.count(r"\|") for l in filas}
+        self.assertEqual(anchos, {6}, filas)
+        # Y la severidad distingue el error del aviso, que es lo que dice
+        # cuál rompe el build.
+        self.assertTrue(any(l.startswith("| ✗") for l in filas), filas)
+        self.assertTrue(any(l.startswith("| !") for l in filas), filas)
+
+    def test_el_resumen_del_job_declara_sus_reservas(self):
         with self._repo() as td:
             raiz = Path(td)
             sumario = raiz / "sum.md"
@@ -3853,9 +3875,6 @@ class LosCuatroCanalesNoCallabanLoMismo(unittest.TestCase):
                     "GITHUB_OUTPUT": str(raiz / "out.txt")}):
                 correr_garita(raiz)
             texto = sumario.read_text(encoding="utf-8")
-        self.assertIn(r"`tubo\|corte.py`", texto)
-        for fila in [l for l in texto.splitlines() if l.startswith("| ✗")]:
-            self.assertEqual(fila.count("|") - fila.count(r"\|"), 6, fila)
         self.assertIn("exención que no aplicó", texto)
         self.assertIn("Configuración", texto)
 
