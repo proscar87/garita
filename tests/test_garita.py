@@ -3964,3 +3964,129 @@ class LosCuatroCanalesNoCallabanLoMismo(unittest.TestCase):
         declaradas = {r["id"] for r in
                       doc["runs"][0]["tool"]["driver"]["rules"]}
         self.assertIn("sin_revisar", declaradas)
+
+
+class ElRepoHostilNoDesarmaAlGuardian(unittest.TestCase):
+    """v0.31.0: el `.garita.yml` y los nombres de archivo los trae el
+    repositorio REVISADO — en un pull request de un fork los escribe quien
+    manda el PR. Seis maneras de que ese PR saliera aprobado."""
+
+    CLABE = "002180000645829179"
+
+    def test_la_exencion_que_apaga_el_repo_se_nombra_en_los_cuatro_canales(self):
+        # Tres líneas y el guardián está apagado. No se BLOQUEA —hay repos
+        # que legítimamente revisan sólo una carpeta— pero no puede ser una
+        # línea gris: se nombra el patrón, y en el SARIF con nivel de error.
+        archivos = {"datos.txt": f"CLABE {self.CLABE}\n"}
+        for patron in ('"*"', '"**"'):
+            archivos[".garita.yml"] = (f"exenciones:\n  - archivo: {patron}\n"
+                                       f"    motivo: refactor pendiente\n")
+            with repo_temporal(dict(archivos)) as td:
+                raiz = Path(td)
+                codigo, salida = correr_garita(raiz)
+                self.assertEqual(codigo, 0, patron)
+                self.assertIn("el guardián está apagado", salida, patron)
+                destino = raiz / "r.sarif"
+                correr_garita(raiz, "--formato", "sarif",
+                              "--salida", str(destino))
+                doc = json.loads(destino.read_text(encoding="utf-8"))
+                errores = [r for r in doc["runs"][0]["results"]
+                           if r["level"] == "error"]
+                self.assertTrue(errores, patron)
+                self.assertIn("apagado", errores[0]["message"]["text"])
+
+    def test_la_exencion_acotada_no_dispara_el_aviso(self):
+        # El contrapeso: una exención normal —un archivo, o con detectores
+        # nombrados— no puede gritar «el guardián está apagado».
+        with repo_temporal({
+                "datos.txt": f"CLABE {self.CLABE}\n",
+                "otro.txt": "nada\n",
+                ".garita.yml": ("exenciones:\n  - archivo: datos.txt\n"
+                                "    motivo: catálogo público\n")}) as td:
+            codigo, salida = correr_garita(Path(td))
+        self.assertEqual(codigo, 0)
+        self.assertNotIn("apagado", salida)
+
+    def test_un_motivo_de_puros_espacios_no_es_un_motivo(self):
+        # `_valor()` conserva el interior de las comillas, así que «   »
+        # llegaba como cadena verdadera y pasaba la validación que toda la
+        # herramienta promete obligatoria.
+        for motivo in ('"   "', '"\t"', "'  '"):
+            with repo_temporal({
+                    "datos.txt": f"CLABE {self.CLABE}\n",
+                    ".garita.yml": (f"exenciones:\n  - archivo: datos.txt\n"
+                                    f"    motivo: {motivo}\n")}) as td:
+                codigo, salida = correr_garita(Path(td))
+            self.assertEqual(codigo, 2, motivo)
+            self.assertIn("motivo", salida)
+
+    def test_el_hook_declara_el_separador_de_banderas(self):
+        texto = (AQUI.parent / ".pre-commit-hooks.yaml").read_text(
+            encoding="utf-8")
+        self.assertIn("args: ['--']", texto)
+
+    def test_un_archivo_llamado_como_bandera_se_revisa_tras_el_separador(self):
+        with repo_temporal({"datos.txt": f"CLABE {self.CLABE}\n"}) as td:
+            raiz = Path(td)
+            (raiz / "--version").write_text(f"CLABE {self.CLABE}\n",
+                                            encoding="utf-8")
+            subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+            codigo, salida = correr_garita(raiz, "--", "--version",
+                                           "datos.txt")
+        self.assertEqual(codigo, 1, salida)
+        self.assertNotIn("garita 0.", salida)
+
+    def test_el_nombre_de_puros_espacios_no_se_cae_de_la_lista(self):
+        # `if f.strip()` descartaba un nombre legal en git y en POSIX; con
+        # `-z` lo único que hay que tirar es el campo vacío del final.
+        sys.path.insert(0, str(AQUI.parent))
+        from scripts.ejecutar import archivos_del_pr  # noqa: E402
+        with unittest.mock.patch("subprocess.run") as correr:
+            correr.return_value = unittest.mock.Mock(
+                stdout="a.txt\0 \0\tb\0", returncode=0)
+            salida = archivos_del_pr({"GITHUB_BASE_REF": "main"})
+        self.assertEqual(salida, ["a.txt", " ", "\tb"])
+
+    def test_el_symlink_se_revisa_por_su_blob_no_por_su_destino(self):
+        # Lo que git publica de un symlink es la CADENA de su destino. Al
+        # seguirlo, la revisión normal reprobaba por contenido que NO está
+        # en el repositorio mientras --historial, que sí lee el blob, decía
+        # «limpio»: dos motores del mismo programa en desacuerdo.
+        if os.name == "nt":
+            self.skipTest("el escenario usa enlaces simbólicos")
+        with TemporaryDirectory() as base:
+            afuera = Path(base) / "afuera"
+            afuera.mkdir()
+            (afuera / "secreto.txt").write_text(f"CLABE {self.CLABE}\n",
+                                                encoding="utf-8")
+            with repo_temporal({"a.txt": "hola\n"}) as td:
+                raiz = Path(td)
+                (raiz / "enlace.txt").symlink_to(afuera / "secreto.txt")
+                subprocess.run(["git", "add", "-A"], cwd=raiz, check=True)
+                codigo, salida = correr_garita(raiz)
+        self.assertEqual(codigo, 0, salida)
+        self.assertNotIn("enlace.txt", salida)
+
+    def test_no_se_borra_la_linea_base_si_la_revision_quedo_incompleta(self):
+        # Con una fuente opcional ausente el detector no corre, así que
+        # cero hallazgos NO es deuda pagada: es revisión incompleta. Borrar
+        # ahí la línea base commiteada tira el trabajo de todos y lo
+        # anuncia como un logro.
+        with repo_temporal({
+                "acta.md": "Reunión con Marisol Quintanar el jueves.\n",
+                ".gitignore": "lista.txt\n",
+                ".garita.yml": "nombres:\n  - ?lista.txt\n"}) as td:
+            raiz = Path(td)
+            (raiz / "lista.txt").write_text("Marisol Quintanar\n",
+                                            encoding="utf-8")
+            codigo, _ = correr_garita(raiz, "--linea-base")
+            self.assertEqual(codigo, 0)
+            base = raiz / ".garita-base.json"
+            self.assertTrue(base.is_file())
+            (raiz / "lista.txt").unlink()
+            codigo, salida = correr_garita(raiz, "--linea-base")
+            # DENTRO del bloque: al salir, el directorio temporal se borra
+            # y cualquier `is_file()` daría False por el motivo equivocado.
+            self.assertEqual(codigo, 2, salida)
+            self.assertTrue(base.is_file(), "la línea base se borró")
+            self.assertIn("incompleta", salida)

@@ -259,8 +259,14 @@ def cargar(raiz: Path, nombre: str = NOMBRE_ARCHIVO) -> Config:
             raise ConfigInvalida(
                 "cada exención necesita al menos «archivo» y «motivo»."
             )
-        archivo = e.get("archivo")
-        motivo = e.get("motivo")
+        # Con `strip`: `_valor()` conserva el interior de las comillas, así
+        # que «motivo: "   "» llegaba como una cadena verdadera y pasaba la
+        # validación que toda la herramienta promete obligatoria — incluido
+        # el docstring de `--proponer-exenciones`, que se apoya en que el
+        # motivo en blanco es código 2 para que el esqueleto no se pueda
+        # pegar y olvidar. Tres espacios no son una razón.
+        archivo = str(e.get("archivo") or "").strip()
+        motivo = str(e.get("motivo") or "").strip()
         if not archivo or not motivo:
             raise ConfigInvalida(
                 f"la exención de «{archivo or '?'}» no tiene motivo. El motivo "
@@ -297,7 +303,7 @@ def cargar(raiz: Path, nombre: str = NOMBRE_ARCHIVO) -> Config:
                 f"que no es una lista ni una lista separada por comas."
             )
         detectores = tuple(d.strip() for d in dets.split(",") if d.strip())
-        exenciones.append(Exencion(str(archivo), str(motivo), detectores))
+        exenciones.append(Exencion(archivo, motivo, detectores))
 
     paises = datos.get("paises", "")
     if isinstance(paises, str):

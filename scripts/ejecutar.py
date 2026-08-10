@@ -48,7 +48,12 @@ def archivos_del_pr(entorno=os.environ) -> list[str]:
          f"origin/{base}...HEAD"],
         capture_output=True, text=True,
     )
-    return [f for f in r.stdout.split("\0") if f.strip()]
+    # `if f`, no `if f.strip()`: con `-z` el separador es el NUL y lo
+    # único que hay que descartar es el campo vacío del final. Un
+    # nombre de archivo hecho sólo de espacios es legal en git y en
+    # POSIX, y con `strip` se caía de la lista: el PR que lo agregaba
+    # con una credencial dentro no se revisaba.
+    return [f for f in r.stdout.split("\0") if f]
 
 
 def argumentos(entorno=os.environ) -> list[str]:

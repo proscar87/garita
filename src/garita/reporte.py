@@ -65,6 +65,31 @@ def recortes_de_configuracion(cfg) -> list[str]:
     return fuera
 
 
+def exenciones_que_apagan(res) -> list[str]:
+    """Las exenciones que cubren TODO lo revisado, dichas con su patrón.
+
+    Una exención de tres líneas —`- archivo: "*"` con su motivo— apaga el
+    repositorio entero, y el `.garita.yml` lo trae el repositorio REVISADO:
+    en un pull request de un fork lo escribe quien manda el PR. La salida
+    era «✓ nada que reportar» con código 0 y una línea gris diciendo
+    «52 revisiones omitidas por exenciones declaradas», sin nombrar el
+    patrón. Es exactamente el caso que `recortes_de_configuracion` existe
+    para no repetir: el interruptor general no puede ser mudo.
+
+    No se BLOQUEA —una exención con motivo es configuración legítima, y
+    hay repos que de verdad quieren revisar sólo una carpeta—; se NOMBRA,
+    en los cuatro canales.
+    """
+    revisados = getattr(res, "archivos_revisados", 0)
+    if not revisados:
+        return []
+    cobertura = getattr(res, "archivos_por_exencion", {}) or {}
+    return [f"la exención «{patron}» cubre TODOS los {revisados} archivos "
+            f"revisados y todos los detectores: para este repositorio el "
+            f"guardián está apagado"
+            for patron, n in sorted(cobertura.items()) if n >= revisados]
+
+
 def _ruta(v: str) -> str:
     """Bajo Actions, stdout es un canal de comandos, no sólo texto.
 
@@ -102,6 +127,8 @@ def imprimir(res: Resultado, salida=None, base=None,
 
     for recorte in (recortes_de_configuracion(cfg) if cfg else []):
         print(n(f"! {recorte}", "amarillo"), file=salida)
+    for apagon in exenciones_que_apagan(res):
+        print(n(f"! {apagon}", "amarillo"), file=salida)
 
     # Los archivos que se saltaron por tamaño se dicen SIEMPRE, haya o no
     # hallazgos. Un volcado grande omitido en silencio es una marca verde sin
@@ -344,6 +371,8 @@ def resumen_markdown(res: Resultado, base=None, nuevos=None,
             + ". Un archivo grande es justo donde cabe un padrón entero.")
     for recorte in (recortes_de_configuracion(cfg) if cfg else []):
         reservas.append(f"**Configuración**: {recorte}.")
+    for apagon in exenciones_que_apagan(res):
+        reservas.append(f"**Atención**: {apagon}.")
     # Las exenciones muertas también son una reserva sobre el veredicto:
     # quien escribió la regla cree que sigue tapando algo, y el archivo
     # lleva revisándose sin ella desde que se renombró. Hasta aquí eso sólo

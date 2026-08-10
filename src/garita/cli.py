@@ -221,7 +221,8 @@ def main(argv: list[str] | None = None) -> int:
                else raiz / NOMBRE_POR_OMISION)
 
     if args.linea_base:
-        return _congelar(args, cfg, detectores, raiz, ruta_lb)
+        return _congelar(args, cfg, detectores, raiz, ruta_lb,
+                         listas_ausentes)
 
     base = None
     if not args.sin_linea_base:
@@ -473,7 +474,8 @@ def _historial(args, cfg, detectores, raiz: Path) -> int:
     return 0
 
 
-def _congelar(args, cfg, detectores, raiz: Path, ruta_lb: Path) -> int:
+def _congelar(args, cfg, detectores, raiz: Path, ruta_lb: Path,
+              listas_ausentes=()) -> int:
     """Escribe la línea base. Sale 0 aunque haya 400 hallazgos: está
     registrando deuda, no reprobando."""
     if args.archivos:
@@ -486,6 +488,23 @@ def _congelar(args, cfg, detectores, raiz: Path, ruta_lb: Path) -> int:
     base = construir_linea_base(res.hallazgos, fecha=date.today().isoformat())
 
     if base.total == 0:
+        # «Limpio» y «no se pudo mirar todo» no son lo mismo. Con una fuente
+        # opcional ausente —el mecanismo que existe para la lista
+        # gitignoreada que sólo vive donde se necesita— el detector no corre
+        # en esa máquina, así que cero hallazgos NO significa deuda pagada:
+        # significa revisión incompleta. Borrar ahí la línea base commiteada
+        # tira el trabajo de todos y lo anuncia como un logro.
+        incompleta = list(listas_ausentes) + [a for a, _ in res.ilegibles]
+        if incompleta and ruta_lb.is_file():
+            print("Garita: no congelo nada y NO toco la línea base: esta "
+                  "revisión quedó incompleta.", file=sys.stderr)
+            print(f"  Sin revisar: {', '.join(incompleta[:5])}.",
+                  file=sys.stderr)
+            print("  Cero hallazgos aquí no quiere decir que la deuda esté "
+                  "pagada; quiere decir que no se miró todo. Corre "
+                  "«--linea-base» donde la revisión sea completa.",
+                  file=sys.stderr)
+            return 2
         print("Garita: nada que congelar — el repositorio está limpio.")
         if ruta_lb.is_file():
             # Se BORRA, no se sugiere borrar. Dejarlo era un no-op con

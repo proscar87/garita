@@ -139,25 +139,37 @@ contra los consumidores antes de mover el tag `v0`.
 
 ## 3. Plausible, con receta, sin verificar
 
-Quedan dieciocho. Los ocho de «los cuatro canales» se reprodujeron uno por
-uno y se saldaron en **v0.30.0**; los demás nadie los ha atacado con
-adversario: **reproducir primero**.
+Quedan doce, todos de calibración de países. Los ocho de «los cuatro
+canales» se saldaron en **v0.30.0** y los seis del «repositorio hostil» en
+**v0.31.0**, cada uno reproducido antes de tocarlo. Los que quedan nadie los
+ha atacado con adversario: **reproducir primero**.
 
-### El repositorio hostil
+### El repositorio hostil — saldado en v0.31.0
 
-- [ ] Una exención con patrón `*` o `**` apaga el repositorio entero y el
-  reporte no la nombra — `config.py:284`.
-- [ ] Un motivo hecho sólo de espacios entre comillas pasa la validación
-  que la herramienta promete obligatoria — `config.py:264`.
-- [ ] El hook de pre-commit pasa los nombres sin `--`: un archivo llamado
-  `--version` aprueba el repo — `.pre-commit-hooks.yaml:10`. (La Action ya
-  cerró este ataque; la otra superficie con `pass_filenames` quedó abierta.)
-- [ ] Un nombre de archivo hecho sólo de espacio en blanco se cae de la
-  lista en modo solo-cambios — `ejecutar.py:51`.
-- [ ] `leer()` sigue los enlaces simbólicos: se revisa contenido que no
-  está en el repositorio — `nucleo.py:349`.
-- [ ] `--linea-base` borra la línea base commiteada cuando falta una fuente
-  opcional, y lo declara «deuda ya pagada» — `cli.py:479`.
+Los seis reproducidos antes de tocarlos.
+
+- [x] Una exención con patrón `*` o `**` apagaba el repositorio entero y el
+  reporte no la nombraba: sólo una línea gris con el total de revisiones
+  omitidas. No se bloquea —hay repos que legítimamente revisan una sola
+  carpeta— pero ahora se NOMBRA el patrón en los cuatro canales, y en el
+  SARIF con nivel de error: no es una reserva sobre el veredicto, es la
+  ausencia del veredicto.
+- [x] Un motivo hecho sólo de espacios pasaba la validación que toda la
+  herramienta promete obligatoria — incluido `--proponer-exenciones`, que
+  se apoya en que el motivo en blanco es código 2.
+- [x] El hook de pre-commit pasaba los nombres sin `--`: `garita --version
+  datos.txt` imprimía la versión y salía con **0**, o sea que el hook
+  aprobaba el commit entero. La Action ya cerraba este ataque; la otra
+  superficie con `pass_filenames` se había quedado abierta.
+- [x] Un nombre de archivo hecho sólo de espacio en blanco —legal en git y
+  en POSIX— se caía de la lista en modo solo-cambios.
+- [x] `leer()` seguía los enlaces simbólicos. Lo que git publica de un
+  symlink es la CADENA de su destino, así que la revisión normal reprobaba
+  por contenido que **no está en el repositorio** mientras `--historial`,
+  que sí lee el blob, decía «limpio» sobre el mismo commit.
+- [x] `--linea-base` borraba la línea base commiteada cuando faltaba una
+  fuente opcional y lo declaraba «deuda ya pagada». Cero hallazgos ahí no
+  es deuda pagada: es revisión incompleta. Ahora sale con 2 sin tocarla.
 
 ### Los cuatro canales no dicen lo mismo — saldado en v0.30.0
 

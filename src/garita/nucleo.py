@@ -380,8 +380,20 @@ def leer(ruta: Path) -> str | None:
     """Devuelve el texto del archivo, o None si es binario.
 
     Levanta `Ilegible` si no se pudo abrir: eso no se decide en silencio.
+
+    Un enlace simbólico NO se sigue. Lo que git publica de un symlink es su
+    blob, y el blob de un symlink es la CADENA de su destino: `git push` no
+    manda el archivo apuntado. Siguiéndolo, la revisión normal leía —y
+    reprobaba por— contenido que no está en el repositorio y que puede
+    vivir en cualquier parte del disco de quien corre CI, mientras
+    `--historial`, que sí lee el blob, decía «limpio» sobre el mismo repo.
+    Dos motores del mismo programa contradiciéndose sobre el mismo commit.
     """
     try:
+        if ruta.is_symlink():
+            # El destino tal cual lo guarda git, sin resolver: si apunta a
+            # algo dentro del repositorio, ese algo se revisa por su cuenta.
+            return _nfc(os.readlink(ruta))
         crudo = ruta.read_bytes()
     except OSError as e:
         raise Ilegible(f"{e.strerror or e}") from e
@@ -503,6 +515,13 @@ class Resultado:
     exentos_aplicados: dict[str, int] = field(default_factory=dict)
     exenciones_muertas: list[str] = field(default_factory=list)
     """Exenciones cuyo patrón no coincidió con ningún archivo revisado."""
+    archivos_por_exencion: dict[str, int] = field(default_factory=dict)
+    """Cuántos ARCHIVOS cubre cada exención sin restricción de detector.
+
+    `exentos_aplicados` cuenta revisiones (archivo × detector) y por eso no
+    sirve para medir alcance. Esto sí: una exención que cubre todos los
+    archivos revisados no es una exención, es el guardián apagado — y eso
+    tiene que decirse con el patrón por delante, no como una línea gris."""
     ilegibles: list[tuple[str, str]] = field(default_factory=list)
     """Los que git rastrea y no se pudieron abrir, CON su motivo. Van
     aparte de los binarios porque no son lo mismo: un binario se decidió
@@ -603,6 +622,9 @@ def revisar(
         aplican = [e for e in exen if casa_ruta(rel, e.patron)]
         for e in aplican:
             patrones_vistos.add(e.patron)
+            if not e.detectores:
+                res.archivos_por_exencion[e.patron] = (
+                    res.archivos_por_exencion.get(e.patron, 0) + 1)
 
         for det in dets:
             cubierto = next(

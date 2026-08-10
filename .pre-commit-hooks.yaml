@@ -8,6 +8,13 @@
   name: Garita — datos personales y credenciales
   description: Impide que nombres de tu padrón, identificadores mexicanos y secretos entren al repositorio.
   entry: garita
+  # El «--» cierra las banderas antes de los nombres. Sin él, un
+  # archivo del repositorio llamado «--version» era una BANDERA para
+  # argparse: `garita --version datos.txt` imprimía la versión y
+  # salía con 0, o sea que el hook aprobaba el commit entero. La
+  # Action cerró este ataque en su envoltorio; esta superficie —la
+  # otra con pass_filenames— se había quedado abierta.
+  args: ['--']
   language: python
   pass_filenames: true
   require_serial: false

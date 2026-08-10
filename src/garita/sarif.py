@@ -101,6 +101,7 @@ def generar(res: Resultado, detectores, conocidos=(), cfg=None) -> dict:
     # no miró es el que esta herramienta existe para no ser.
     resultados += _alertas_de_lo_no_revisado(res)
     resultados += alertas_de_configuracion(cfg)
+    resultados += alertas_de_exenciones_que_apagan(res)
     reglas.setdefault(
         "sin_revisar", "Archivos que Garita no pudo o no debió leer")
 
@@ -167,6 +168,20 @@ def alertas_de_configuracion(cfg) -> list:
                                 f"Configuración: {recorte}.",
                                 huella=f"config:{recorte}")
             for recorte in (recortes_de_configuracion(cfg) if cfg else [])]
+
+
+def alertas_de_exenciones_que_apagan(res) -> list:
+    """Una exención que cubre todo el repositorio, con nivel de error.
+
+    Va en `error` y no en `note` a propósito: no es una reserva sobre el
+    veredicto, es la ausencia del veredicto. Tres líneas en el `.garita.yml`
+    que trae el propio pull request bastaban para un «✓» con código 0.
+    """
+    from .reporte import exenciones_que_apagan
+
+    return [_alerta_sin_revisar(".garita.yml", "error", apagon + ".",
+                                huella=f"apagon:{apagon[:60]}")
+            for apagon in exenciones_que_apagan(res)]
 
 
 def _alerta_sin_revisar(archivo: str, nivel: str, texto: str,

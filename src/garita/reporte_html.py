@@ -198,9 +198,11 @@ def _seccion_reservas(res, cfg=None) -> str:
     —o con la mitad de los detectores apagados— no es un entregable, es una
     coartada.
     """
-    from .reporte import recortes_de_configuracion
+    from .reporte import exenciones_que_apagan, recortes_de_configuracion
 
     bloques = []
+    for apagon in exenciones_que_apagan(res):
+        bloques.append(f'<p class="gris"><b>Atención:</b> {_E(apagon)}.</p>')
     if getattr(res, "ilegibles", None):
         filas = "".join(f'<li><code>{_E(a)}</code> <span class="suave">— '
                         f"{_E(m)}</span></li>"
