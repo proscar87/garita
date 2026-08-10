@@ -186,8 +186,48 @@ def _seccion_omitidos(omitidos) -> str:
             f'justo donde cabe un padrón entero. Revísalos aparte.</p></section>')
 
 
+def _seccion_reservas(res, cfg=None) -> str:
+    """Todo lo que le pone un asterisco al veredicto, en el documento que se
+    entrega.
+
+    El HTML es el canal que el docstring de este módulo describe como el
+    entregable «para el cliente, el auditor, el consejo directivo», y era el
+    más callado de los cuatro: no mencionaba los archivos ilegibles, ni los
+    detectores que la configuración apagó, ni las exenciones muertas. Un
+    documento que dice «nada que reportar» sobre archivos que nadie leyó
+    —o con la mitad de los detectores apagados— no es un entregable, es una
+    coartada.
+    """
+    from .reporte import recortes_de_configuracion
+
+    bloques = []
+    if getattr(res, "ilegibles", None):
+        filas = "".join(f'<li><code>{_E(a)}</code> <span class="suave">— '
+                        f"{_E(m)}</span></li>"
+                        for a, m in res.ilegibles[:10])
+        bloques.append(
+            f"<h3>No se pudieron leer</h3>"
+            f'<ul style="padding-left:20px" class="gris">{filas}</ul>'
+            f'<p class="suave">Garita no puede decir que están limpios: no '
+            f"los miró.</p>")
+    for recorte in (recortes_de_configuracion(cfg) if cfg else []):
+        bloques.append(f'<p class="gris">Configuración: {_E(recorte)}.</p>')
+    if getattr(res, "exenciones_muertas", None):
+        filas = "".join(f"<li><code>{_E(p)}</code></li>"
+                        for p in res.exenciones_muertas[:10])
+        bloques.append(
+            f"<h3>Exenciones que no aplicaron</h3>"
+            f'<ul style="padding-left:20px" class="gris">{filas}</ul>'
+            f'<p class="suave">El archivo se renombró o se borró. Si se '
+            f"renombró, lleva revisándose sin exención desde entonces.</p>")
+    if not bloques:
+        return ""
+    return (f'<section class="tarjeta"><h2>Reservas sobre este veredicto</h2>'
+            f"{''.join(bloques)}</section>")
+
+
 def generar(res, raiz: str, fecha: str, base=None, nuevos=None,
-            conocidos=None, pagadas=None) -> str:
+            conocidos=None, pagadas=None, cfg=None) -> str:
     """El reporte de una revisión del árbol de trabajo."""
     if nuevos is None:
         nuevos = res.hallazgos
@@ -264,6 +304,7 @@ def generar(res, raiz: str, fecha: str, base=None, nuevos=None,
             f"</p></section>")
 
     partes.append(_seccion_omitidos(res.omitidos_grandes))
+    partes.append(_seccion_reservas(res, cfg))
 
     sub = (f"Revisión del árbol de trabajo · <code>{_E(raiz)}</code> · "
            f"{_E(fecha)} · {veredicto}")
@@ -355,6 +396,7 @@ def generar_historial(res, raiz: str, fecha: str) -> str:
                       "</p></section>")
 
     partes.append(_seccion_omitidos(res.omitidos_grandes))
+    partes.append(_seccion_reservas(res))
 
     sub = (f"Auditoría del historial completo · <code>{_E(raiz)}</code> · "
            f"{_E(fecha)} · {veredicto}")

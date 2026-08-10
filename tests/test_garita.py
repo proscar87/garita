@@ -3819,3 +3819,129 @@ class LaExencionNombraLoQueExenta(unittest.TestCase):
         # El de la subcarpeta sigue siendo hallazgo; el de la raíz, exento.
         self.assertIn("sub/vectores.json", salida)
         self.assertNotIn("\nvectores.json", salida)
+
+
+class LosCuatroCanalesNoCallabanLoMismo(unittest.TestCase):
+    """v0.30.0: un hallazgo que sale en un canal y no en otro es un
+    hallazgo que alguien no verá. El HTML —el entregable para el auditor—
+    era el más callado de los cuatro, y el resumen del job no distinguía
+    un error de un aviso."""
+
+    CLABE = "002180000645829179"
+
+    def _repo(self):
+        return repo_temporal({
+            "datos.txt": f"CLABE {self.CLABE}\n",
+            "tubo|corte.py": f"CLABE {self.CLABE}\n",
+            ".garita.yml": ("detectores:\n  - curp: false\n"
+                            "exenciones:\n"
+                            "  - archivo: no_existe_jamas.txt\n"
+                            "    motivo: exención muerta a propósito\n"),
+        })
+
+    def test_el_resumen_del_job_lleva_severidad_y_escapa_la_barra(self):
+        # La barra parte una fila de GFM AUNQUE esté en un span de código:
+        # una fila de 5 celdas contra un encabezado de 4 hacía que GitHub
+        # truncara y enlazara a una ruta inexistente. Y el nombre de
+        # archivo lo elige quien manda el PR.
+        with self._repo() as td:
+            raiz = Path(td)
+            sumario = raiz / "sum.md"
+            with unittest.mock.patch.dict(os.environ, {
+                    "GITHUB_STEP_SUMMARY": str(sumario),
+                    "GITHUB_ACTIONS": "true",
+                    "GITHUB_OUTPUT": str(raiz / "out.txt")}):
+                correr_garita(raiz)
+            texto = sumario.read_text(encoding="utf-8")
+        self.assertIn(r"`tubo\|corte.py`", texto)
+        for fila in [l for l in texto.splitlines() if l.startswith("| ✗")]:
+            self.assertEqual(fila.count("|") - fila.count(r"\|"), 6, fila)
+        self.assertIn("exención que no aplicó", texto)
+        self.assertIn("Configuración", texto)
+
+    def test_el_html_declara_sus_reservas(self):
+        # El canal descrito como el entregable «para el cliente, el
+        # auditor, el consejo directivo» no mencionaba ni los detectores
+        # apagados ni las exenciones muertas.
+        with self._repo() as td:
+            raiz = Path(td)
+            destino = raiz / "r.html"
+            correr_garita(raiz, "--formato", "html", "--salida", str(destino))
+            html = destino.read_text(encoding="utf-8")
+        self.assertIn("Reservas sobre este veredicto", html)
+        self.assertIn("Exenciones que no aplicaron", html)
+        self.assertIn("Configuración", html)
+        # Y sigue sin filtrar el valor, que es la regla que el pie jura.
+        self.assertNotIn(self.CLABE, html)
+
+    def test_el_sarif_declara_las_mismas_reservas(self):
+        with self._repo() as td:
+            raiz = Path(td)
+            destino = raiz / "r.sarif"
+            correr_garita(raiz, "--formato", "sarif", "--salida", str(destino))
+            doc = json.loads(destino.read_text(encoding="utf-8"))
+        avisos = [r for r in doc["runs"][0]["results"]
+                  if r["ruleId"] == "sin_revisar"]
+        textos = " ".join(r["message"]["text"] for r in avisos)
+        self.assertIn("no aplicó a ningún archivo", textos)
+        self.assertIn("Configuración", textos)
+        # Las huellas distinguen alertas del mismo archivo: sin esto las
+        # tres ancladas a .garita.yml se fundían en una.
+        huellas = {tuple(r["partialFingerprints"].values()) for r in avisos}
+        self.assertEqual(len(huellas), len(avisos))
+        self.assertNotIn(self.CLABE, json.dumps(doc))
+
+    def test_la_cabecera_pem_se_nombra_por_su_etiqueta(self):
+        # `recortar` toma los extremos, y en un PEM los dos extremos son
+        # guiones: el «qué» salía «----…----» en los cuatro canales.
+        from garita.detectores.secretos import _etiqueta_pem
+        cuerpo = ("MIIEowIBAAKCAQEAx7Zq9K3mF2vN8pQr4tYuI6oP0aSdFgHjKlZxCvBn"
+                  "M1qWeRtY")
+        casos = {
+            "-----BEGIN RSA PRIVATE KEY-----": "RSA PRIVATE KEY",
+            "-----BEGIN ENCRYPTED PRIVATE KEY-----": "ENCRYPTED PRIVATE KEY",
+            "-----BEGIN PGP PRIVATE KEY BLOCK-----": "PGP PRIVATE KEY BLOCK",
+            "-----BEGIN PRIVATE KEY-----": "PRIVATE KEY",
+        }
+        for cabecera, etiqueta in casos.items():
+            self.assertEqual(_etiqueta_pem(cabecera), etiqueta)
+            hs = list(buscar(f"{cabecera}\n{cuerpo}\n", "k.pem"))
+            self.assertEqual([h.que for h in hs], [etiqueta], cabecera)
+
+    def test_el_historial_escribe_el_panel_del_job(self):
+        # Es el modo de la auditoría programada: el que corre solo y cuyo
+        # resultado nadie va a buscar a los registros. El panel salía
+        # vacío, o sea que la auditoría parecía no haber corrido.
+        with repo_temporal({"datos.txt": f"CLABE {self.CLABE}\n"}) as td:
+            raiz = Path(td)
+            subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                            "commit", "-qm", "inicial"], cwd=raiz, check=True)
+            sumario = raiz / "sum.md"
+            with unittest.mock.patch.dict(os.environ, {
+                    "GITHUB_STEP_SUMMARY": str(sumario),
+                    "GITHUB_ACTIONS": "true",
+                    "GITHUB_OUTPUT": str(raiz / "out.txt")}):
+                codigo, _ = correr_garita(raiz, "--historial")
+            texto = sumario.read_text(encoding="utf-8")
+        self.assertEqual(codigo, 1)
+        self.assertIn("auditoría del historial", texto)
+        self.assertIn("datos.txt", texto)
+        self.assertNotIn(self.CLABE, texto)
+
+    def test_el_sarif_del_historial_declara_lo_que_no_leyo(self):
+        # «cero alertas» sobre un blob de megas que nunca se abrió, en el
+        # modo cuyo propósito entero es no dar nada por revisado.
+        grande = f"CLABE {self.CLABE}\n" + "x" * 3_000_000
+        with repo_temporal({"grande.csv": grande, "chico.txt": "hola\n"}) as td:
+            raiz = Path(td)
+            subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                            "commit", "-qm", "inicial"], cwd=raiz, check=True)
+            destino = raiz / "h.sarif"
+            correr_garita(raiz, "--historial", "--formato", "sarif",
+                          "--salida", str(destino))
+            doc = json.loads(destino.read_text(encoding="utf-8"))
+        reglas = {r["ruleId"] for r in doc["runs"][0]["results"]}
+        self.assertIn("sin_revisar", reglas)
+        declaradas = {r["id"] for r in
+                      doc["runs"][0]["tool"]["driver"]["rules"]}
+        self.assertIn("sin_revisar", declaradas)

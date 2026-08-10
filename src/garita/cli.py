@@ -38,6 +38,7 @@ from .historial import es_somero, revisar_historial
 from .nucleo import revisar
 from .reporte import (
     anotaciones_github, imprimir, imprimir_historial, resumen_markdown,
+    resumen_markdown_historial,
 )
 from .reporte_html import (
     generar as generar_html,
@@ -296,12 +297,13 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.formato == "sarif":
         documento = json.dumps(generar_sarif(res, detectores,
-                                             conocidos=conocidos),
+                                             conocidos=conocidos, cfg=cfg),
                                indent=2, ensure_ascii=False) + "\n"
     elif args.formato == "html":
         documento = generar_html(
             res, raiz=raiz.name, fecha=date.today().isoformat(),
-            base=base, nuevos=nuevos, conocidos=conocidos, pagadas=pagadas)
+            base=base, nuevos=nuevos, conocidos=conocidos, pagadas=pagadas,
+            cfg=cfg)
     else:
         documento = None
 
@@ -455,6 +457,13 @@ def _historial(args, cfg, detectores, raiz: Path) -> int:
     else:
         imprimir_historial(res, sin_color=args.sin_color)
 
+    # El panel del job, que a `--historial` le faltaba. Es el modo de la
+    # auditoría programada: el que corre solo y cuyo resultado nadie va a
+    # buscar a los registros. Sin esto el panel salía vacío y la auditoría
+    # parecía no haber corrido.
+    resumen = os.environ.get("GITHUB_STEP_SUMMARY")
+    if resumen and not _anexar(resumen, resumen_markdown_historial(res)):
+        return 2
     if not _salida_de_action(len(res.hallazgos)):
         return 2
     if res.errores:

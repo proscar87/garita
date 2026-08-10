@@ -303,6 +303,18 @@ def anotaciones_github(res: Resultado, salida=None, conocidos=()) -> None:
               f"title={titulo}::{mensaje}", file=salida)
 
 
+def _celda(v: str) -> str:
+    """Una barra en el texto parte la fila de una tabla GFM.
+
+    Y la parte AUNQUE esté dentro de un span de código: hay que escaparla.
+    Un archivo llamado `tubo|corte.py` generaba una fila de cinco celdas
+    contra un encabezado de cuatro, así que GitHub truncaba y el enlace del
+    panel apuntaba a una ruta que no existe. El nombre de archivo lo elige
+    el repositorio revisado, o sea que lo elige quien manda el PR.
+    """
+    return v.replace("|", "\\|")
+
+
 def resumen_markdown(res: Resultado, base=None, nuevos=None,
                      conocidos=None, cfg=None) -> str:
     """Para el resumen del job, que es lo que se ve sin abrir los registros."""
@@ -332,6 +344,17 @@ def resumen_markdown(res: Resultado, base=None, nuevos=None,
             + ". Un archivo grande es justo donde cabe un padrón entero.")
     for recorte in (recortes_de_configuracion(cfg) if cfg else []):
         reservas.append(f"**Configuración**: {recorte}.")
+    # Las exenciones muertas también son una reserva sobre el veredicto:
+    # quien escribió la regla cree que sigue tapando algo, y el archivo
+    # lleva revisándose sin ella desde que se renombró. Hasta aquí eso sólo
+    # existía en la terminal, y el panel del job es lo que se mira.
+    if getattr(res, "exenciones_muertas", None):
+        reservas.append(
+            f"**{len(res.exenciones_muertas)} exención"
+            f"{'es' if len(res.exenciones_muertas) != 1 else ''} que no "
+            f"aplicó a ningún archivo**: "
+            + ", ".join(f"`{_celda(p)}`" for p in res.exenciones_muertas[:5])
+            + ". El archivo se renombró o se borró; actualiza `.garita.yml`.")
     cola = ("\n\n" + "\n\n".join(reservas)) if reservas else ""
 
     if not nuevos:
@@ -349,11 +372,18 @@ def resumen_markdown(res: Resultado, base=None, nuevos=None,
                   + (f" y {a} aviso{'s' if a != 1 else ''}" if a else "")
                   + f" en {res.archivos_revisados} archivos revisados."
                   + deuda)
-    lineas += ["", "| Archivo | Línea | Detector | Qué |", "|---|---:|---|---|"]
+    # La severidad va en la tabla. Los otros tres canales la llevan —la
+    # consola imprime ✗ y !, el HTML su marca, el SARIF su `level`— y aquí
+    # el error y el aviso se veían idénticos: quien mira el panel del job
+    # no podía saber cuál rompe el build.
+    lineas += ["", "| | Archivo | Línea | Detector | Qué |",
+               "|---|---|---:|---|---|"]
     for h in nuevos[:50]:
-        lineas.append(f"| `{h.archivo}` | {h.linea} | {h.detector} | {h.que} |")
+        marca = "✗" if h.severidad == "error" else "!"
+        lineas.append(f"| {marca} | `{_celda(h.archivo)}` | {h.linea} "
+                      f"| {h.detector} | {_celda(h.que)} |")
     if len(nuevos) > 50:
-        lineas.append(f"| … | | | {len(nuevos) - 50} más |")
+        lineas.append(f"| | … | | | {len(nuevos) - 50} más |")
     lineas += ["", "Cada hallazgo trae su motivo y su arreglo en el registro "
                "completo de la ejecución."]
     return "\n".join(lineas) + cola + "\n"
@@ -441,3 +471,70 @@ def imprimir_historial(res, salida=None, sin_color=False) -> None:
                 "historia: esa decisión es humana.", "gris"), file=salida)
         print(n("  3. Si es legítimo que esté ahí, exenta la ruta en "
                 ".garita.yml con su motivo.", "gris"), file=salida)
+
+
+def resumen_markdown_historial(res) -> str:
+    """El panel del job para `--historial`.
+
+    `--historial` es el modo de la auditoría programada: el que corre solo
+    una vez al mes y cuyo resultado nadie va a ir a buscar a los registros.
+    Era justo el que no escribía nada en el resumen del job, así que el
+    panel salía vacío y la auditoría parecía no haber corrido.
+
+    Separa lo vivo de lo que sólo el historial recuerda, por el mismo
+    motivo que el reporte de consola: el arreglo es distinto. Lo vivo se
+    arregla editando; lo «borrado» sólo se arregla rotando.
+    """
+    vivos = [h for h in res.hallazgos if h.vivo]
+    muertos = [h for h in res.hallazgos if not h.vivo]
+
+    reservas = []
+    if res.omitidos_grandes:
+        n_om = len(res.omitidos_grandes)
+        reservas.append(
+            f"**{n_om} versi{'ón' if n_om == 1 else 'ones'} sin revisar por "
+            f"tamaño**: "
+            + ", ".join(f"`{_celda(a)}`" for a, _ in res.omitidos_grandes[:5])
+            + ". Un archivo grande es justo donde cabe un padrón entero.")
+    if getattr(res, "ilegibles", None):
+        reservas.append(
+            f"**{len(res.ilegibles)} sin poder leer**: "
+            + ", ".join(f"`{_celda(a)}`" for a, _ in res.ilegibles[:5]))
+    cola = ("\n\n" + "\n\n".join(reservas)) if reservas else ""
+
+    alcance = (
+        f"{res.blobs_revisados} versi"
+        f"{'ón' if res.blobs_revisados == 1 else 'ones'} de archivo "
+        f"revisada{'' if res.blobs_revisados == 1 else 's'} en "
+        f"{res.commits} commit{'' if res.commits == 1 else 's'} "
+        f"({res.blobs_omitidos} omitida{'' if res.blobs_omitidos == 1 else 's'}: "
+        f"binarias, muy grandes o sin datos).")
+
+    if not res.hallazgos:
+        marca = "⚠️" if reservas else "✅"
+        return (f"## {marca} Garita — auditoría del historial\n\n"
+                f"El historial está limpio. {alcance}{cola}\n")
+
+    lineas = ["## 🚧 Garita — auditoría del historial", ""]
+    if muertos:
+        lineas.append(
+            f"**{len(muertos)} hallazgo{'s' if len(muertos) != 1 else ''} "
+            f"SÓLO en el historial**: el archivo ya no existe, el dato sí — "
+            f"vive en cada clon y en cada fork. Rotar es lo único que lo "
+            f"invalida.")
+    if vivos:
+        lineas.append(
+            f"**{len(vivos)} todavía en el árbol**: la revisión normal "
+            f"también {'los' if len(vivos) != 1 else 'lo'} ve.")
+    lineas += ["", alcance, "",
+               "| | Archivo | Detector | Commit | Estado |",
+               "|---|---|---|---|---|"]
+    for hh in res.hallazgos[:50]:
+        h = hh.hallazgo
+        marca = "✗" if h.severidad == "error" else "!"
+        estado = "en el árbol" if hh.vivo else "**sólo en el historial**"
+        lineas.append(f"| {marca} | `{_celda(h.archivo)}` | {h.detector} "
+                      f"| `{hh.commit}` | {estado} |")
+    if len(res.hallazgos) > 50:
+        lineas.append(f"| | … | | | {len(res.hallazgos) - 50} más |")
+    return "\n".join(lineas) + cola + "\n"

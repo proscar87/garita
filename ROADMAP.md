@@ -139,7 +139,9 @@ contra los consumidores antes de mover el tag `v0`.
 
 ## 3. Plausible, con receta, sin verificar
 
-Veintiséis. Nadie los ha atacado con adversario: **reproducir primero**.
+Quedan dieciocho. Los ocho de «los cuatro canales» se reprodujeron uno por
+uno y se saldaron en **v0.30.0**; los demás nadie los ha atacado con
+adversario: **reproducir primero**.
 
 ### El repositorio hostil
 
@@ -157,19 +159,33 @@ Veintiséis. Nadie los ha atacado con adversario: **reproducir primero**.
 - [ ] `--linea-base` borra la línea base commiteada cuando falta una fuente
   opcional, y lo declara «deuda ya pagada» — `cli.py:479`.
 
-### Los cuatro canales no dicen lo mismo
+### Los cuatro canales no dicen lo mismo — saldado en v0.30.0
 
-- [ ] El SARIF de `--historial` no emite `sin_revisar`: «cero alertas»
-  sobre un blob que nunca se leyó — `sarif.py:218`.
-- [ ] El HTML no menciona los archivos ilegibles — `reporte_html.py:266`.
-- [ ] HTML y SARIF callan los recortes de configuración: verde mudo con los
-  detectores apagados — `reporte_html.py:209`.
-- [ ] `--historial` nunca escribe `GITHUB_STEP_SUMMARY` — `cli.py:458`.
-- [ ] Las exenciones muertas sólo existen en la terminal — `reporte.py:334`.
-- [ ] Un `|` en el nombre del archivo parte la fila de la tabla del resumen
-  — `reporte.py:354`.
-- [ ] La tabla del resumen no lleva severidad: error y aviso idénticos —
-  `reporte.py:352`.
+Los ocho se reprodujeron construyendo un repositorio que ejercita cada
+señal a la vez y diferenciando los cuatro canales sobre él.
+
+- [x] El SARIF de `--historial` no emitía `sin_revisar`: «cero alertas»
+  sobre un blob que nunca se leyó, en el modo cuyo propósito entero es no
+  dar nada por revisado.
+- [x] El HTML no mencionaba los archivos ilegibles, ni los recortes de
+  configuración, ni las exenciones muertas — y es el canal que su propio
+  docstring describe como el entregable para el auditor. Ahora hay una
+  sección «Reservas sobre este veredicto» en los dos reportes HTML.
+- [x] El SARIF callaba los recortes de configuración: cero alertas sobre un
+  repositorio con la mitad del guardián apagado.
+- [x] `--historial` nunca escribía `GITHUB_STEP_SUMMARY`, así que el panel
+  de la auditoría programada salía vacío.
+- [x] Las exenciones muertas sólo existían en la terminal. *(Al medir el
+  arreglo apareció una real en coto-orquideas.)*
+- [x] Un `|` en el nombre del archivo partía la fila de la tabla del
+  resumen — y la parte aunque esté dentro de un span de código.
+- [x] La tabla del resumen no llevaba severidad: el error y el aviso se
+  veían idénticos.
+- [x] `recortar` sobre `llave_privada` imprimía `----…----`: los dos
+  extremos de un PEM son guiones. Ahora se nombra por su etiqueta
+  (`ENCRYPTED PRIVATE KEY`), que no es el secreto — el secreto es el
+  cuerpo, y el cuerpo no se imprime nunca.
+
 - [ ] El bloque de `--proponer-exenciones` no es YAML válido para el propio
   lector si la ruta lleva `#` — `cli.py:544`. (Falla cerrada.)
 

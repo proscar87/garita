@@ -372,6 +372,16 @@ def _pem_con_cuerpo(lineas: list[str], indice: int,
     return False
 
 
+def _etiqueta_pem(cabecera: str) -> str:
+    """«-----BEGIN ENCRYPTED PRIVATE KEY-----» → «ENCRYPTED PRIVATE KEY».
+
+    Distinguir una llave RSA de una cifrada o de un bloque PGP cambia el
+    arreglo —una cifrada da tiempo si la contraseña es fuerte y no está en
+    el mismo repositorio—, y el recorte por extremos no distinguía nada.
+    """
+    return cabecera.strip("-").removeprefix("BEGIN ").strip() or "PRIVATE KEY"
+
+
 def buscar(texto: str, archivo: str) -> Iterator[Hallazgo]:
     lineas = texto.splitlines()
     for i, linea in enumerate(lineas, 1):
@@ -394,7 +404,15 @@ def buscar(texto: str, archivo: str) -> Iterator[Hallazgo]:
                         and not _pem_con_cuerpo(lineas, i - 1,
                                                 m.start(), m.end())):
                     continue
-                yield _h(archivo, i, nombre, recortar(m.group(0)), por_que, arreglo)
+                # La cabecera PEM se nombra por su ETIQUETA, no se recorta.
+                # `recortar` toma los extremos, y en un PEM los dos extremos
+                # son guiones: el «qué» salía «----…----», que no dice nada
+                # en ninguno de los cuatro canales. La cabecera además no es
+                # el secreto —es un marcador de formato público—; el secreto
+                # es el cuerpo, y el cuerpo no se imprime nunca.
+                que = (_etiqueta_pem(m.group(0)) if nombre == "llave_privada"
+                       else recortar(m.group(0)))
+                yield _h(archivo, i, nombre, que, por_que, arreglo)
 
 
 # ── Asignaciones sospechosas ───────────────────────────────────────────────

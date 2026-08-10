@@ -49,7 +49,7 @@ ESQUEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 VERSION_SARIF = "2.1.0"
 
 
-def generar(res: Resultado, detectores, conocidos=()) -> dict:
+def generar(res: Resultado, detectores, conocidos=(), cfg=None) -> dict:
     """El documento SARIF como dict listo para json.dumps.
 
     Los hallazgos cubiertos por la línea base (`conocidos`) salen con nivel
@@ -100,6 +100,7 @@ def generar(res: Resultado, detectores, conocidos=()) -> dict:
     # o sobre un archivo que ni se pudo abrir. Un guardián que calla lo que
     # no miró es el que esta herramienta existe para no ser.
     resultados += _alertas_de_lo_no_revisado(res)
+    resultados += alertas_de_configuracion(cfg)
     reglas.setdefault(
         "sin_revisar", "Archivos que Garita no pudo o no debió leer")
 
@@ -139,10 +140,37 @@ def _alertas_de_lo_no_revisado(res) -> list:
             archivo, "warning",
             f"Sin revisar: {motivo}. Un archivo grande es justo donde cabe "
             f"un padrón entero — revísalo aparte."))
+    # Una exención que no aplicó también es una reserva sobre el veredicto:
+    # quien la escribió cree que sigue tapando algo. Vivía sólo en la
+    # terminal, y la pestaña Security es lo que mira quien no corre Garita.
+    for patron in getattr(res, "exenciones_muertas", ()):
+        fuera.append(_alerta_sin_revisar(
+            ".garita.yml", "note",
+            f"La exención «{patron}» no aplicó a ningún archivo. El archivo "
+            f"se renombró o se borró: si se renombró, lleva revisándose sin "
+            f"exención desde entonces; si se borró, la regla es "
+            f"configuración muerta.", huella=f"exencion:{patron}"))
     return fuera
 
 
-def _alerta_sin_revisar(archivo: str, nivel: str, texto: str) -> dict:
+def alertas_de_configuracion(cfg) -> list:
+    """Los detectores que la configuración apagó, como alerta propia.
+
+    La consola y el resumen del job lo dicen desde que se descubrió que
+    tres líneas apagando detectores producían un «✓ nada que reportar» con
+    código 0. El SARIF no: la pestaña Security mostraba cero alertas sobre
+    un repositorio con la mitad del guardián apagado.
+    """
+    from .reporte import recortes_de_configuracion
+
+    return [_alerta_sin_revisar(".garita.yml", "note",
+                                f"Configuración: {recorte}.",
+                                huella=f"config:{recorte}")
+            for recorte in (recortes_de_configuracion(cfg) if cfg else [])]
+
+
+def _alerta_sin_revisar(archivo: str, nivel: str, texto: str,
+                        huella: str | None = None) -> dict:
     return {
         "ruleId": "sin_revisar",
         "level": nivel,
@@ -153,7 +181,11 @@ def _alerta_sin_revisar(archivo: str, nivel: str, texto: str) -> dict:
                 "region": {"startLine": 1},
             },
         }],
-        "partialFingerprints": {"garitaSinRevisar/v1": archivo},
+        # La huella distingue las alertas que comparten archivo: sin esto,
+        # dos exenciones muertas y un recorte de configuración —los tres
+        # anclados a `.garita.yml`— se fundían en una sola alerta y la
+        # pestaña Security mostraba una de tres.
+        "partialFingerprints": {"garitaSinRevisar/v1": huella or archivo},
     }
 
 
@@ -214,6 +246,13 @@ def generar_historial(res, detectores) -> dict:
                     f"{hh.commit}::{h.archivo}::{h.detector}::{n}",
             },
         })
+
+    # El historial no llamaba a esto: un blob de dos megas que nunca se
+    # abrió salía como «cero alertas» en la pestaña Security, sobre el
+    # modo cuyo propósito ENTERO es no dar nada por revisado.
+    resultados += _alertas_de_lo_no_revisado(res)
+    reglas.setdefault(
+        "sin_revisar", "Archivos que Garita no pudo o no debió leer")
 
     return {
         "$schema": ESQUEMA,
