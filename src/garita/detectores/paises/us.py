@@ -22,15 +22,38 @@ import re
 
 from ...config import Config
 from ...nucleo import Detector
-from ._comun import buscador, limpio
+from ._comun import bases_de_relleno, buscador, limpio
 
 _SSN = re.compile(r"(?<![\d\-])\d{3}[\s\-]?\d{2}[\s\-]?\d{4}(?![\d\-])")
-_CONTEXTO = re.compile(r"(?i)\b(ssn|social security|seguro social|itin)\b")
+# El sustantivo va en plural opcional: el encabezado de una columna, la
+# clave de un YAML y el nombre de una variable casi siempre lo llevan
+# («cedulas», «rucs», «contribuyentes»), y con el `\b` pegado al
+# singular el detector con contexto obligatorio quedaba CIEGO sobre
+# justo la forma en que se exporta un padrón. Los acrónimos que en
+# plural chocan con una palabra común («run»→«runs») se quedan sin la
+# «s» a propósito: una palabra de contexto envenenada es peor que la
+# forma que deja de casar.
+_CONTEXTO = re.compile(r"(?i)\b(ssns?|social security|seguros? sociales?|itins?)\b")
 
 # La cartera de Woolworth (1938) y el anuncio de la SSA: los dos SSN más
 # publicados de la historia, ambos retirados. Y los rellenos de siempre.
-EXENTOS_SSN = {"078051120", "219099999", "123456789", "111111111",
-               "121212121", "555555555"}
+_PUBLICADOS = ({"078051120", "219099999", "123456789", "111111111",
+                "121212121", "555555555"}
+               # La SSA reserva 987-65-4320 … 987-65-4329 para publicidad y
+               # material de ejemplo: nunca se emiten. Es el segundo relleno
+               # más usado después del secuencial, y estaba fuera.
+               | {f"98765432{d}" for d in range(10)})
+
+
+def _rellenos_validos() -> set[str]:
+    """Los rellenos de nueve dígitos que pasan la estructura de la SSA.
+
+    La lista escrita a mano cubría seis y dejaba fuera los igual de
+    comunes: el de nueves —que además cuela como ITIN por el rango
+    94-99—, el secuencial descendente y cinco repetidos. Un relleno
+    que se reporta como una persona es lo que enseña a apagar el paso.
+    """
+    return {v for v in bases_de_relleno(9) if ssn_valido(v)}
 
 
 def ssn_valido(v: str) -> bool:
@@ -47,6 +70,9 @@ def ssn_valido(v: str) -> bool:
         g = int(grupo)
         return 50 <= g <= 65 or 70 <= g <= 88 or 90 <= g <= 92 or 94 <= g <= 99
     return area not in ("000", "666")
+
+
+EXENTOS_SSN = _PUBLICADOS | _rellenos_validos()
 
 
 def detectores(cfg: Config) -> list[Detector]:

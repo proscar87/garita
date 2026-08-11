@@ -25,7 +25,15 @@ _PESOS = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
 _PREFIJOS = {"20", "23", "24", "25", "26", "27", "30", "33", "34"}
 _PERSONA = {"20", "23", "24", "25", "26", "27"}
 
-_CONTEXTO = re.compile(r"(?i)\b(cuit|cuil|afip|arca|dni|documento|factura)\b")
+# El sustantivo va en plural opcional: el encabezado de una columna, la
+# clave de un YAML y el nombre de una variable casi siempre lo llevan
+# («cedulas», «rucs», «contribuyentes»), y con el `\b` pegado al
+# singular el detector con contexto obligatorio quedaba CIEGO sobre
+# justo la forma en que se exporta un padrón. Los acrónimos que en
+# plural chocan con una palabra común («run»→«runs») se quedan sin la
+# «s» a propósito: una palabra de contexto envenenada es peor que la
+# forma que deja de casar.
+_CONTEXTO = re.compile(r"(?i)\b(cuits?|cuils?|afip|arca|dnis?|documentos?|facturas?)\b")
 
 
 def cuit_valido(v: str) -> bool:

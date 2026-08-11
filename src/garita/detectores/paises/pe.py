@@ -23,7 +23,15 @@ from ._comun import buscador, limpio
 _RUC = re.compile(r"(?<![\d\-])(?:10|15|16|17|20)\d{9}(?![\d\-])")
 _PESOS = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2]
 
-_CONTEXTO = re.compile(r"(?i)\b(ruc|sunat|dni|comprobante|factura|boleta)\b")
+# El sustantivo va en plural opcional: el encabezado de una columna, la
+# clave de un YAML y el nombre de una variable casi siempre lo llevan
+# («cedulas», «rucs», «contribuyentes»), y con el `\b` pegado al
+# singular el detector con contexto obligatorio quedaba CIEGO sobre
+# justo la forma en que se exporta un padrón. Los acrónimos que en
+# plural chocan con una palabra común («run»→«runs») se quedan sin la
+# «s» a propósito: una palabra de contexto envenenada es peor que la
+# forma que deja de casar.
+_CONTEXTO = re.compile(r"(?i)\b(rucs?|sunat|dnis?|comprobantes?|facturas?|boletas?)\b")
 
 
 def ruc_valido(v: str) -> bool:

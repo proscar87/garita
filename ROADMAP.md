@@ -139,10 +139,10 @@ contra los consumidores antes de mover el tag `v0`.
 
 ## 3. Plausible, con receta, sin verificar
 
-Quedan doce, todos de calibración de países. Los ocho de «los cuatro
-canales» se saldaron en **v0.30.0** y los seis del «repositorio hostil» en
-**v0.31.0**, cada uno reproducido antes de tocarlo. Los que quedan nadie los
-ha atacado con adversario: **reproducir primero**.
+Quedan cuatro. Los ocho de «los cuatro canales» se saldaron en **v0.30.0**,
+los seis del «repositorio hostil» en **v0.31.0** y ocho de calibración en
+**v0.32.0**; dos se refutaron al reproducirlos. Los que quedan son las tres
+colisiones entre países y el padrón pelado: **reproducir primero**.
 
 ### El repositorio hostil — saldado en v0.31.0
 
@@ -210,31 +210,44 @@ señal a la vez y diferenciando los cuatro canales sobre él.
 - [ ] El contexto de EC satisface el refuerzo de CO: 9.56 % de las cédulas
   ecuatorianas se reportan además como NIT colombiano — `co.py:40`.
 
-### Los dieciséis países: contexto y rellenos
+### Los dieciséis países: contexto y rellenos — saldado en v0.32.0
 
-- [ ] **El plural del sustantivo de contexto no casa**: «cedulas», «rucs»,
-  «contribuyentes» silencian nueve detectores — `ec.py:24` y ocho más. El
-  encabezado de una columna y la clave de un YAML van casi siempre en
-  plural.
+- [x] **El plural del sustantivo de contexto no casaba.** Toda regex cerraba
+  con `\b` pegado al singular, y la clave de un YAML o de un JSON va casi
+  siempre en plural: los detectores con contexto obligatorio quedaban ciegos
+  sobre la forma en que se exporta un padrón. Trece países corregidos. Los
+  acrónimos que en plural chocan con una palabra común del inglés
+  —«run»→«runs», «sii»— se quedaron sin la «s» **a propósito**: una palabra
+  de contexto envenenada es peor que la forma que deja de casar.
+- [x] Los rellenos de dígito repetido, que pasan el módulo 10 y el 11 con
+  frecuencia: los ocho DNI españoles, los CIF (`A00000000`, `U-00000000`),
+  el RUT chileno de ceros —de siete Y de ocho dígitos—, cinco SSN, y el NIT
+  colombiano, cuya lista estaba literalmente vacía. Se **generan** con el
+  validador de cada país, no se copian, para que no envejezcan.
+- [x] El rango 987-65-432X que la SSA reserva para publicidad, añadido con
+  su fuente a la lista de publicados de EE.UU.
+
+**Dos se refutaron al reproducirlos:**
+
+- **El NIT guatemalteco secuencial** (el ascendente de ocho dígitos con
+  su verificador). Exentar las secuencias
+  ascendentes rompió tres pruebas del propio proyecto —un CIF y un NIT
+  colombiano legítimos usan justo esos cuerpos— porque un identificador
+  secuencial REAL existe, a diferencia de uno de ocho dígitos repetidos.
+  Callarlo sería cambiar un falso positivo por un falso negativo, que pesa
+  más. Sólo se exentan secuenciales con reserva oficial verificable.
+- **El punto del teléfono mexicano.** No se pudo producir un falso positivo
+  real: el detector no dispara dentro de un número ni dentro de una URL, y
+  el punto ahí es *refuerzo* —evidencia de que alguien lo escribió como
+  teléfono—, no el separador que `_comun.py` discute. Quitarlo perdería los
+  teléfonos escritos con puntos, o sea un falso negativo a cambio de nada.
+
+### Lo que sigue abierto de los países
+
 - [ ] Un padrón exportado pelado no lo ve ningún detector, contra lo que
-  promete `DISENO.md:88-93` para once de los que tienen verificador propio
-  — `_comun.py:193`.
-- [ ] CIF español sin lista de rellenos: 145 formas de placeholder validan
-  — `es.py:50`.
-- [ ] Los ocho DNI españoles de dígito repetido validan y ninguno está en
-  `EXENTOS` — `es.py:50`. (El mecanismo funciona: el de puros ceros sí está
-  exento y se calla.)
-- [ ] RUT chileno de puros ceros: `range(1, 10)` deja fuera el repetido del
-  dígito cero, que es el relleno de campo vacío más común — `cl.py:23`.
-- [ ] Rellenos de SSN que validan y no están exentos: el de nueves —que
-  además pasa como ITIN por el rango 94-99—, el secuencial descendente y
-  cinco repetidos — `us.py:32`.
-- [ ] El NIT guatemalteco secuencial valida y no está exento — `gt.py:56`.
-  (`br.py:41` ya exenta el suyo por exactamente esta razón.)
-- [ ] El NIT colombiano de puros ceros valida y `EXENTOS` está vacío —
-  `co.py:38`.
-- [ ] El teléfono mexicano acepta el punto como separador y es el único
-  detector de `mx.py` que no consulta `dentro_de_un_numero` — `mx.py:370`.
+  promete `DISENO.md:88-93` — `_comun.py:193`. El plural NO lo arregla: el
+  encabezado de un CSV va en la línea de arriba y `exige_contexto` pide la
+  palabra en la MISMA línea.
 
 ---
 

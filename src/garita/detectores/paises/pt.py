@@ -23,7 +23,15 @@ from ...nucleo import Detector
 from ._comun import buscador, limpio
 
 _NIF = re.compile(r"(?<![\d.\-])[1-9]\d{2}[\s.]?\d{3}[\s.]?\d{3}(?![\d\-])")
-_CONTEXTO = re.compile(r"(?i)\b(nif|contribuinte|fiscal|finan[cç]as)\b")
+# El sustantivo va en plural opcional: el encabezado de una columna, la
+# clave de un YAML y el nombre de una variable casi siempre lo llevan
+# («cedulas», «rucs», «contribuyentes»), y con el `\b` pegado al
+# singular el detector con contexto obligatorio quedaba CIEGO sobre
+# justo la forma en que se exporta un padrón. Los acrónimos que en
+# plural chocan con una palabra común («run»→«runs») se quedan sin la
+# «s» a propósito: una palabra de contexto envenenada es peor que la
+# forma que deja de casar.
+_CONTEXTO = re.compile(r"(?i)\b(nifs?|contribuintes?|fiscal(?:es)?|finan[cç]as)\b")
 
 # 123456789 pasa el módulo 11 y es el marcador de posición de todos los
 # formularios portugueses de ejemplo.

@@ -21,11 +21,19 @@ import re
 
 from ...config import Config
 from ...nucleo import Detector
-from ._comun import buscador, limpio
+from ._comun import bases_de_relleno, buscador, limpio
 
 _NIT = re.compile(r"(?<![\w.\-])\d{4,8}\s?-?\s?[0-9Kk](?![\w\-])")
 
-_CONTEXTO = re.compile(r"(?i)\b(nit|fel|factura|contribuyente)\b")
+# El sustantivo va en plural opcional: el encabezado de una columna, la
+# clave de un YAML y el nombre de una variable casi siempre lo llevan
+# («cedulas», «rucs», «contribuyentes»), y con el `\b` pegado al
+# singular el detector con contexto obligatorio quedaba CIEGO sobre
+# justo la forma en que se exporta un padrón. Los acrónimos que en
+# plural chocan con una palabra común («run»→«runs») se quedan sin la
+# «s» a propósito: una palabra de contexto envenenada es peor que la
+# forma que deja de casar.
+_CONTEXTO = re.compile(r"(?i)\b(nits?|fel|facturas?|contribuyentes?)\b")
 
 
 def nit_gt_valido(v: str) -> bool:
@@ -53,7 +61,13 @@ def _repetidos_validos() -> set[str]:
 
 # Más el vector de toda la documentación FEL de la SAT, que el docstring
 # cita y el código no exentaba: citar el instructivo oficial daba error.
-EXENTOS_NIT = _repetidos_validos() | {"36029785"}
+# El vector oficial de la SAT, los repetidos, y los SECUENCIALES: el
+# «12345678-9» pasa el módulo 11 y es el relleno de ejemplo más obvio
+# que existe. br.py ya exenta el suyo por exactamente esta razón.
+EXENTOS_NIT = (_repetidos_validos() | {"36029785"}
+               | {b + dv for largo in range(4, 9)
+                  for b in bases_de_relleno(largo)
+                  for dv in "0123456789K" if nit_gt_valido(b + dv)})
 
 
 def detectores(cfg: Config) -> list[Detector]:

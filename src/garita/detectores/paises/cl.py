@@ -14,15 +14,22 @@ import re
 
 from ...config import Config
 from ...nucleo import Detector
-from ._comun import buscador, limpio
+from ._comun import bases_de_relleno, buscador, limpio
 
 _RUT = re.compile(r"(?<![\w.\-])\d{1,2}\.?\d{3}\.?\d{3}\s?-?\s?[0-9kK](?![\w\-])")
 
 # Genéricos del SII: extranjeros sin domicilio y creadores de contenido.
 # Más los repetidos, que validan y son marcadores.
-EXENTOS = {"444444460", "444444479"} | {f"{str(d)*8}{d}" for d in range(1, 10)}
 
-_CONTEXTO = re.compile(r"(?i)\b(rut|run|sii|c[eé]dula|boleta|factura)\b")
+# El sustantivo va en plural opcional: el encabezado de una columna, la
+# clave de un YAML y el nombre de una variable casi siempre lo llevan
+# («cedulas», «rucs», «contribuyentes»), y con el `\b` pegado al
+# singular el detector con contexto obligatorio quedaba CIEGO sobre
+# justo la forma en que se exporta un padrón. Los acrónimos que en
+# plural chocan con una palabra común («run»→«runs») se quedan sin la
+# «s» a propósito: una palabra de contexto envenenada es peor que la
+# forma que deja de casar.
+_CONTEXTO = re.compile(r"(?i)\b(ruts?|run|sii|c[eé]dulas?|boletas?|facturas?)\b")
 
 
 def rut_valido(v: str) -> bool:
@@ -36,6 +43,19 @@ def rut_valido(v: str) -> bool:
         mult = 2 if mult == 7 else mult + 1
     r = 11 - s % 11
     return m.group(2) == ("0" if r == 11 else "K" if r == 10 else str(r))
+
+
+# `range(10)`, no `range(1, 10)`: el módulo 11 del RUT de puros ceros da
+# suma 0 y dígito «0», así que VALIDA — y es el relleno de campo vacío
+# más común de cualquier export. Empezar el rango en 1 lo dejaba fuera
+# de la lista y disparaba como una persona.
+EXENTOS = ({"444444460", "444444479"}
+           | {f"{str(d)*8}{d}" for d in range(10)}
+           # SIETE y ocho dígitos: el RUT admite los dos largos, y el de
+           # puros ceros —«0.000.000-0», el campo vacío de cualquier
+           # export— es de siete. Cubrir sólo el de ocho lo dejaba fuera.
+           | {b + dv for largo in (7, 8) for b in bases_de_relleno(largo)
+              for dv in "0123456789K" if rut_valido(b + dv)})
 
 
 def detectores(cfg: Config) -> list[Detector]:

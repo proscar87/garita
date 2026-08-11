@@ -196,3 +196,24 @@ def buscador(
                 sev = "aviso" if dentro_de_url(linea, m.start()) else "error"
                 yield hallazgo(archivo, i, detector, v, por_que, severidad=sev)
     return buscar
+
+
+def bases_de_relleno(largo: int) -> list[str]:
+    """Los dígitos REPETIDOS de un largo dado: «000…», «111…», «999…».
+
+    Es lo que escribe quien arma un fixture, una migración o una plantilla
+    para dejar el campo vacío, y con un dígito verificador de módulo 10 u 11
+    una fracción de ellos VALIDA — así que dispara como si fuera una
+    persona. Cada país filtra esta lista con su propio validador: se
+    generan, no se copian, para que no envejezcan si cambia el algoritmo.
+
+    Sólo los repetidos, a propósito. La primera versión incluía también el
+    ascendente («12345678») y el descendente, y eso exentaba de más: un NIT
+    colombiano de cédula antigua y un CIF español legítimos usan justo esos
+    cuerpos —los rompió en las propias pruebas del proyecto— y un
+    identificador secuencial REAL existe. Un relleno repetido no: nadie
+    tiene un documento de ocho dígitos iguales. Los secuenciales famosos
+    que sí están reservados por una autoridad van en la lista de publicados
+    de su país, uno por uno y con su fuente.
+    """
+    return [str(d) * largo for d in range(10)]

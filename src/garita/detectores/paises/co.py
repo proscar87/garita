@@ -18,7 +18,7 @@ import re
 
 from ...config import Config
 from ...nucleo import Detector
-from ._comun import buscador, limpio
+from ._comun import bases_de_relleno, buscador, limpio
 
 # Dos niveles a propósito. La base de NUEVE dígitos es la normal y exige
 # refuerzo (separadores o palabra). La de OCHO —las cédulas antiguas, hoy
@@ -35,9 +35,28 @@ _PESOS = [3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71]
 # está exento a propósito: son doce dígitos, la regex admite diez a lo sumo y
 # sus truncados no pasan el dígito de la DIAN — nunca llega a validarse. Un
 # exento que no puede casar es código muerto que aparenta protección.
-EXENTOS: set[str] = set()
+# Ese razonamiento no cubría el relleno que SÍ casa: «000.000.000-0»
+# pasa el dígito de la DIAN —suma cero, residuo cero, dígito cero— y
+# es el campo vacío de cualquier export. La lista se genera con el
+# propio validador, para las dos bases que la regex admite.
+def _rellenos_validos() -> set[str]:
+    fuera = set()
+    for largo in (8, 9):
+        for cuerpo in bases_de_relleno(largo):
+            for dv in "0123456789":
+                if nit_valido(cuerpo + dv):
+                    fuera.add(cuerpo + dv)
+    return fuera
 
-_CONTEXTO = re.compile(r"(?i)\b(nit|r[uú]t|dian|c[eé]dula|c\.?c\.?|nuip|factura)\b")
+# El sustantivo va en plural opcional: el encabezado de una columna, la
+# clave de un YAML y el nombre de una variable casi siempre lo llevan
+# («cedulas», «rucs», «contribuyentes»), y con el `\b` pegado al
+# singular el detector con contexto obligatorio quedaba CIEGO sobre
+# justo la forma en que se exporta un padrón. Los acrónimos que en
+# plural chocan con una palabra común («run»→«runs») se quedan sin la
+# «s» a propósito: una palabra de contexto envenenada es peor que la
+# forma que deja de casar.
+_CONTEXTO = re.compile(r"(?i)\b(nits?|r[uú]ts?|dian|c[eé]dulas?|c\.?c\.?|nuip|facturas?)\b")
 
 # El contexto fuerte para la base de ocho: «rut» aquí sería veneno (nombraría
 # NIT colombiano a todo RUT chileno bien escrito) y «factura»/«cc» acompañan
@@ -53,6 +72,9 @@ def nit_valido(v: str) -> bool:
     s = sum(int(c) * _PESOS[i] for i, c in enumerate(reversed(base)))
     r = s % 11
     return (r if r < 2 else 11 - r) == int(d[-1])
+
+
+EXENTOS: set[str] = _rellenos_validos()
 
 
 def detectores(cfg: Config) -> list[Detector]:

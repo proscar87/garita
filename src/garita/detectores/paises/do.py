@@ -19,7 +19,15 @@ from ...nucleo import Detector
 from ._comun import buscador, limpio
 
 _CEDULA = re.compile(r"(?<![\d\-])\d{3}[\s\-]?\d{7}[\s\-]?\d(?![\d\-])")
-_CONTEXTO = re.compile(r"(?i)\b(c[eé]dula|electoral|jce|identidad)\b")
+# El sustantivo va en plural opcional: el encabezado de una columna, la
+# clave de un YAML y el nombre de una variable casi siempre lo llevan
+# («cedulas», «rucs», «contribuyentes»), y con el `\b` pegado al
+# singular el detector con contexto obligatorio quedaba CIEGO sobre
+# justo la forma en que se exporta un padrón. Los acrónimos que en
+# plural chocan con una palabra común («run»→«runs») se quedan sin la
+# «s» a propósito: una palabra de contexto envenenada es peor que la
+# forma que deja de casar.
+_CONTEXTO = re.compile(r"(?i)\b(c[eé]dulas?|electoral(?:es)?|jce|identidad(?:es)?)\b")
 
 
 def _repetidas_validas() -> set[str]:

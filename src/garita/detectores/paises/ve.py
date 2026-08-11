@@ -29,7 +29,15 @@ _RIF = re.compile(r"(?<![\w-])[VEJPGCvejpgc]\s?-?\s?\d{8}\s?-?\s?\d(?![\w-])")
 _LETRAS = {"V": 1, "E": 2, "J": 3, "P": 4, "G": 5, "C": 3}
 _PESOS = (3, 2, 7, 6, 5, 4, 3, 2)
 
-_CONTEXTO = re.compile(r"(?i)\b(rif|seniat|contribuyente|factura|c[eé]dula)\b")
+# El sustantivo va en plural opcional: el encabezado de una columna, la
+# clave de un YAML y el nombre de una variable casi siempre lo llevan
+# («cedulas», «rucs», «contribuyentes»), y con el `\b` pegado al
+# singular el detector con contexto obligatorio quedaba CIEGO sobre
+# justo la forma en que se exporta un padrón. Los acrónimos que en
+# plural chocan con una palabra común («run»→«runs») se quedan sin la
+# «s» a propósito: una palabra de contexto envenenada es peor que la
+# forma que deja de casar.
+_CONTEXTO = re.compile(r"(?i)\b(rifs?|seniat|contribuyentes?|facturas?|c[eé]dulas?)\b")
 
 
 def rif_valido(v: str) -> bool:

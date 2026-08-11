@@ -4090,3 +4090,102 @@ class ElRepoHostilNoDesarmaAlGuardian(unittest.TestCase):
             self.assertEqual(codigo, 2, salida)
             self.assertTrue(base.is_file(), "la línea base se borró")
             self.assertIn("incompleta", salida)
+
+
+class ElPluralTambienNombra(unittest.TestCase):
+    """v0.32.0: toda regex de contexto cerraba con `\\b` pegado al sustantivo
+    SINGULAR. El encabezado de una columna, la clave de un YAML y el nombre
+    de una variable van casi siempre en plural —«cedulas», «rucs»,
+    «contribuyentes»—, o sea que los detectores con contexto obligatorio
+    quedaban ciegos sobre justo la forma en que se exporta un padrón."""
+
+    CASOS = [("cedula_ec", "cedula", "cedulas", "1719141770"),
+             ("nit_gt", "nit", "nits", "1234567-9"),
+             ("ssn", "ssn", "ssns", "456-78-1234"),
+             ("nif_pt", "contribuinte", "contribuintes", "501442600"),
+             ("ruc", "ruc", "rucs", "20100047218")]
+
+    def _det(self, nombre):
+        return {d.nombre: d for d in construir(Config(), Path("."))}[nombre]
+
+    def test_el_plural_del_sustantivo_tambien_da_contexto(self):
+        for det, sing, plur, valor in self.CASOS:
+            d = self._det(det)
+            self.assertTrue(list(d.buscar(f"{sing}: {valor}\n", "x")),
+                            f"{det} singular")
+            self.assertTrue(list(d.buscar(f"{plur}: {valor}\n", "x")),
+                            f"{det} PLURAL")
+
+    def test_la_clave_en_plural_no_es_ciega(self):
+        # La forma real donde el contexto SÍ está en la misma línea: la
+        # clave de un YAML o de un JSON, y el registro de una bitácora.
+        #
+        # Ojo con lo que esta prueba NO afirma: el encabezado de un CSV va
+        # en la línea de ARRIBA, y `exige_contexto` pide la palabra en la
+        # MISMA línea. Ese caso —el padrón exportado pelado— sigue abierto
+        # en el roadmap y no lo arregla el plural.
+        d = self._det("cedula_ec")
+        for linea in ('  cedulas: ["1719141770"]',
+                      '{"cedulas": "1719141770"}',
+                      "actualizando cedulas 1719141770 del lote 47"):
+            self.assertTrue(list(d.buscar(linea + "\n", "padron.yml")), linea)
+
+    def test_los_acronimos_que_chocan_no_se_pluralizaron(self):
+        # «run» es palabra común en inglés: «runs» como contexto del RUT
+        # chileno envenenaría cualquier repositorio con código en inglés.
+        # Una palabra de contexto envenenada es peor que la forma que deja
+        # de casar, y por eso estas quedan sin la «s» A PROPÓSITO.
+        from garita.detectores.paises import cl
+        self.assertTrue(cl._CONTEXTO.search("run"))
+        self.assertFalse(cl._CONTEXTO.search("runs"))
+        self.assertFalse(cl._CONTEXTO.search("siis"))
+
+
+class LosRellenosNoSonPersonas(unittest.TestCase):
+    """v0.32.0: los dígitos repetidos pasan el módulo 10 y el 11 con
+    frecuencia, así que el campo vacío de un export disparaba como una
+    persona. Cada lista se GENERA con el validador del propio país."""
+
+    def _det(self, nombre):
+        return {d.nombre: d for d in construir(Config(), Path("."))}[nombre]
+
+    def test_los_rellenos_repetidos_se_callan(self):
+        for det, texto in (("dni_es", "DNI 11111111H"),
+                           ("dni_es", "DNI 88888888Y"),
+                           ("cif", "CIF A00000000"),
+                           ("cif", "CIF U-00000000"),
+                           ("rut", "RUT 0.000.000-0"),
+                           ("rut", "RUT 1.111.111-1"),
+                           ("ssn", "SSN 999-99-9999"),
+                           ("ssn", "SSN 222-22-2222"),
+                           ("nit", "NIT 000.000.000-0")):
+            self.assertFalse(list(self._det(det).buscar(texto, "x")), texto)
+
+    def test_el_rango_de_publicidad_de_la_ssa_se_calla(self):
+        # 987-65-4320 … 4329: reservados por la SSA para material de
+        # ejemplo, nunca se emiten.
+        for n in range(10):
+            texto = f"SSN 987-65-432{n}"
+            self.assertFalse(list(self._det("ssn").buscar(texto, "x")), texto)
+
+    def test_los_identificadores_de_verdad_siguen_sonando(self):
+        # El contrapeso que importa: exentar de más ciega el detector, y un
+        # falso negativo pesa más que un falso positivo.
+        for det, texto in (("dni_es", "DNI 13185369K"),
+                           ("cif", "titular B-12345674"),
+                           ("nit", "NIT 12.345.678-8 del proveedor"),
+                           ("ssn", "SSN 456-78-1234"),
+                           ("nit_gt", "NIT 1234567-9"),
+                           ("rut", "RUT 13.185.369-6")):
+            self.assertTrue(list(self._det(det).buscar(texto, "x")), texto)
+
+    def test_solo_los_repetidos_se_generan(self):
+        # La primera versión incluía el ascendente y el descendente, y eso
+        # exentaba de más: rompió los vectores de prueba del propio
+        # proyecto —un CIF y un NIT colombiano legítimos— porque un
+        # identificador secuencial REAL existe. Un repetido no.
+        from garita.detectores.paises._comun import bases_de_relleno
+        bases = bases_de_relleno(8)
+        self.assertEqual(len(bases), 10)
+        self.assertIn("00000000", bases)
+        self.assertNotIn("12345678", bases)

@@ -18,7 +18,7 @@ import re
 
 from ...config import Config
 from ...nucleo import Detector
-from ._comun import buscador, limpio
+from ._comun import bases_de_relleno, buscador, limpio
 
 _TABLA = "TRWAGMYFPDXBNJZSQVHLCKE"
 # Con separador de MILLARES además del guion: «12.345.678-Z» es como se
@@ -47,9 +47,16 @@ _ORG = "ABCDEFGHJKLMNPQRSUVW"
 
 # Ejemplos que la propia autoridad publica, más el NIF de los certificados de
 # prueba de la FNMT: aparecen en miles de documentos y en fixtures reales.
-EXENTOS = {"12345678Z", "00000000T", "99999999R"}
 
-_CONTEXTO = re.compile(r"(?i)\b(dni|nie|nif|cif|documento|identidad|s\.?[la]\.?)\b")
+# El sustantivo va en plural opcional: el encabezado de una columna, la
+# clave de un YAML y el nombre de una variable casi siempre lo llevan
+# («cedulas», «rucs», «contribuyentes»), y con el `\b` pegado al
+# singular el detector con contexto obligatorio quedaba CIEGO sobre
+# justo la forma en que se exporta un padrón. Los acrónimos que en
+# plural chocan con una palabra común («run»→«runs») se quedan sin la
+# «s» a propósito: una palabra de contexto envenenada es peor que la
+# forma que deja de casar.
+_CONTEXTO = re.compile(r"(?i)\b(dnis?|nies?|nifs?|cifs?|documentos?|identidad(?:es)?|s\.?[la]\.?)\b")
 
 
 def dni_valido(v: str) -> bool:
@@ -82,6 +89,39 @@ def cif_valido(v: str) -> bool:
     if m.group(1) in set("ABEH"):
         return m.group(3) == dig
     return m.group(3) in (dig, let)
+
+
+def _rellenos_validos() -> set[str]:
+    """Los rellenos de DNI y de CIF que pasan su control.
+
+    La letra del DNI es el resto módulo 23, así que los ocho repetidos y el
+    secuencial SIEMPRE producen un DNI válido: «11111111H» y sus hermanos
+    son el fixture más común de cualquier proyecto español y disparaban
+    como una persona. El CIF es peor: trece de las veinte letras de
+    organización admiten control numérico o alfabético, así que «A00000000»
+    y «U-00000000» —el marcador de «pendiente de alta»— validan igual.
+
+    Se generan con los mismos validadores del módulo: una lista escrita a
+    mano envejece en cuanto cambie el algoritmo, y una lista incompleta es
+    la que hace que alguien apague el detector.
+    """
+    fuera = set()
+    for cuerpo in bases_de_relleno(8):
+        v = cuerpo + _TABLA[int(cuerpo) % 23]
+        if dni_valido(v):
+            fuera.add(v)
+    for org in _ORG:
+        for cuerpo in bases_de_relleno(7):
+            for ctrl in "0123456789" + _CTRL_CIF:
+                v = f"{org}{cuerpo}{ctrl}"
+                if cif_valido(v):
+                    fuera.add(v)
+    return fuera
+
+
+# Ejemplos que la propia autoridad publica, más el NIF de los certificados
+# de prueba de la FNMT, más los rellenos que validan por construcción.
+EXENTOS = {"12345678Z", "00000000T", "99999999R"} | _rellenos_validos()
 
 
 def _dc_ccc(pesos, digitos) -> int:

@@ -23,7 +23,15 @@ _CI = re.compile(r"(?<![\d.\-])\d\.?\d{3}\.?\d{3}\s?-?\s?\d(?![\d\-])")
 # continua («CI corrió el 20250801» — y una fecha AAAAMMDD pasa el módulo 10
 # una de cada diez veces). La misma lección que ca.py documenta con «SIN».
 # Con puntos —«c.i.»— sí es la cédula, porque así la abrevian los documentos.
-_CONTEXTO = re.compile(r"(?i)\b(c[eé]dula|documento|identidad)\b|\bc\.\s?i\.")
+# El sustantivo va en plural opcional: el encabezado de una columna, la
+# clave de un YAML y el nombre de una variable casi siempre lo llevan
+# («cedulas», «rucs», «contribuyentes»), y con el `\b` pegado al
+# singular el detector con contexto obligatorio quedaba CIEGO sobre
+# justo la forma en que se exporta un padrón. Los acrónimos que en
+# plural chocan con una palabra común («run»→«runs») se quedan sin la
+# «s» a propósito: una palabra de contexto envenenada es peor que la
+# forma que deja de casar.
+_CONTEXTO = re.compile(r"(?i)\b(c[eé]dulas?|documentos?|identidad(?:es)?)\b|\bc\.\s?i\.")
 _PESOS = (2, 9, 8, 7, 6, 3, 4)
 
 # 1.234.567-2 valida y es el ejemplo de los instructivos; los repetidos
