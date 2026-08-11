@@ -536,6 +536,81 @@ class Resultado:
         return [h for h in self.hallazgos if h.severidad == "aviso"]
 
 
+def fusionar_ambiguos(hallazgos: list[Hallazgo]) -> list[Hallazgo]:
+    """Un número, un hallazgo — aunque valide como identificador de varios países.
+
+    El README prometía que «un identificador con dígito verificador no
+    valida fuera de su país», y eso es cierto entre familias distintas y
+    FALSO dentro de la misma. Medido: el NIT guatemalteco y el RUC paraguayo
+    son el mismo módulo 11 sobre la misma base y cruzan el 100 % de las
+    veces; el CUIT argentino y el RUC peruano comparten los pesos y cruzan
+    el 82 %; la cédula ecuatoriana satisface el refuerzo del NIT colombiano
+    el 8 %.
+
+    El reporte emitía entonces DOS hallazgos sobre el mismo número, cada uno
+    afirmando una nacionalidad distinta con la misma seguridad. Las dos no
+    pueden ser ciertas, y quien lee no tiene cómo saber cuál lo es — así que
+    el guardián estaba gritando dos veces para decir menos.
+
+    La información para desambiguar NO está en el número: no hay arreglo que
+    la deduzca. Lo que sí se puede es dejar de fingir que la hay. Se emite un
+    solo hallazgo, con los candidatos nombrados y con el camino para volverlo
+    inequívoco: `paises:` en la configuración.
+
+    Se conserva el hallazgo de mayor severidad —y a igualdad, el primero por
+    nombre de detector, para que el reporte, la línea base y el SARIF sean
+    estables entre corridas—.
+    """
+    from .detectores.paises import NOMBRES, PAIS_DE_DETECTOR
+
+    por_valor: dict[tuple, list[Hallazgo]] = {}
+    orden: list[tuple] = []
+    for h in hallazgos:
+        # Sólo entre identificadores de país: dos detectores de familias
+        # distintas sobre el mismo texto no se contradicen, se suman.
+        clave = ((h.archivo, h.linea, h.que) if h.detector in PAIS_DE_DETECTOR
+                 else ("solo", id(h)))
+        if clave not in por_valor:
+            por_valor[clave] = []
+            orden.append(clave)
+        por_valor[clave].append(h)
+
+    fuera = []
+    for clave in orden:
+        grupo = por_valor[clave]
+        if len(grupo) == 1:
+            fuera.append(grupo[0])
+            continue
+        # Sólo se fusiona entre países DISTINTOS, y sólo si ninguno se
+        # repite. El `que` va recortado, así que dos valores diferentes de
+        # la misma línea pueden compartir clave: en un repositorio real, el
+        # CURP y el RFC de una misma persona —que empiezan igual y pueden
+        # terminar igual— se fundían en uno y se PERDÍA un identificador.
+        # Dos documentos del mismo país no se contradicen: se suman.
+        paises = [PAIS_DE_DETECTOR.get(g.detector, "") for g in grupo]
+        if len(set(paises)) != len(paises):
+            fuera.extend(grupo)
+            continue
+        grupo.sort(key=lambda h: (h.severidad != "error", h.detector))
+        principal = grupo[0]
+        otros = [g for g in grupo[1:] if g.detector != principal.detector]
+        if not otros:
+            fuera.append(principal)
+            continue
+        def _nombrar(g):
+            codigo = PAIS_DE_DETECTOR.get(g.detector, "")
+            return f"«{g.detector}» de {NOMBRES.get(codigo, codigo or '?')}"
+
+        nombres = ", ".join(_nombrar(g) for g in otros)
+        fuera.append(replace(principal, por_que=(
+            f"{principal.por_que} El mismo número también valida como "
+            f"{nombres}: el dígito verificador no distingue el país, así que "
+            f"cuál de los dos es no se puede deducir del valor. Si sabes en "
+            f"qué país vive tu dato, acótalo con «paises:» en .garita.yml y "
+            f"el veredicto deja de ser ambiguo.")))
+    return fuera
+
+
 def revisar(
     raiz: Path,
     detectores: Iterable[Detector],
@@ -656,6 +731,10 @@ def revisar(
                 filtrado = filtrar_por_ruta(h, rel)
                 if filtrado is not None:
                     res.hallazgos.append(filtrado)
+
+    # Un número, un hallazgo: dos países que reclaman el mismo valor se
+    # dicen juntos y no como dos veredictos que se contradicen.
+    res.hallazgos = fusionar_ambiguos(res.hallazgos)
 
     # Una exención que nunca se aplicó apunta a un archivo que ya no existe o
     # que se renombró. En el segundo caso la exención se cayó sin avisar y el

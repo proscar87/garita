@@ -133,8 +133,18 @@ pruebas, así que un arreglo llega a todos el mismo día.
 paises: mx, co     # por omisión: todos los disponibles
 ```
 
-Tenerlos todos encendidos casi no cuesta: un identificador con dígito
-verificador no valida fuera de su país, así que no dispara.
+Tenerlos todos encendidos cuesta poco, y conviene decir la verdad medida.
+Entre familias distintas casi no hay cruce —un RFC mexicano no valida como
+CPF brasileño—, pero entre identificadores del **mismo diseño** el cruce es
+la regla: el NIT guatemalteco y el RUC paraguayo son el mismo módulo 11
+sobre la misma base, así que un número válido en uno lo es en el otro el
+**100 %** de las veces; el CUIT argentino y el RUC peruano comparten los
+pesos y cruzan el **82 %**.
+
+Eso no se resuelve mirando el número, porque la información no está ahí.
+Garita emite **un solo hallazgo** que nombra a los dos candidatos, en vez
+de dos veredictos que se contradicen. Si sabes en qué país vive tu dato,
+`paises:` vuelve el veredicto inequívoco.
 
 **[`docs/AGREGAR_PAIS.md`](docs/AGREGAR_PAIS.md) explica cómo agregar el
 tuyo.** La única regla dura: sólo se acepta un identificador si su validación
@@ -152,7 +162,7 @@ guardián.
 # .pre-commit-config.yaml
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.32.0
+    rev: v0.33.0
     hooks:
       - id: garita
 ```
@@ -552,7 +562,7 @@ wolf gets ignored. With checksum validation, false positives drop by 90× to
 # .pre-commit-config.yaml — start here
 repos:
   - repo: https://github.com/proscar87/garita
-    rev: v0.32.0
+    rev: v0.33.0
     hooks:
       - id: garita
 ```

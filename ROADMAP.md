@@ -139,10 +139,10 @@ contra los consumidores antes de mover el tag `v0`.
 
 ## 3. Plausible, con receta, sin verificar
 
-Quedan cuatro. Los ocho de «los cuatro canales» se saldaron en **v0.30.0**,
-los seis del «repositorio hostil» en **v0.31.0** y ocho de calibración en
-**v0.32.0**; dos se refutaron al reproducirlos. Los que quedan son las tres
-colisiones entre países y el padrón pelado: **reproducir primero**.
+Queda **uno**. Los ocho de «los cuatro canales» se saldaron en **v0.30.0**,
+los seis del «repositorio hostil» en **v0.31.0**, ocho de calibración en
+**v0.32.0** —con dos refutados— y las tres colisiones entre países en
+**v0.33.0**. Lo único abierto es el padrón exportado pelado.
 
 ### El repositorio hostil — saldado en v0.31.0
 
@@ -201,14 +201,22 @@ señal a la vez y diferenciando los cuatro canales sobre él.
 - [ ] El bloque de `--proponer-exenciones` no es YAML válido para el propio
   lector si la ruta lleva `#` — `cli.py:544`. (Falla cerrada.)
 
-### Los dieciséis países: colisiones
+### Los dieciséis países: colisiones — saldado en v0.33.0
 
-- [ ] AR y PE comparten pesos: 82 % de los RUC peruanos de prefijo 20 se
-  reportan además como CUIT de persona física — `ar.py:24`.
-- [ ] GT y PY implementan el mismo módulo 11 y comparten «factura» y
-  «contribuyente»: 100 % de disparo cruzado — `py.py:31`.
-- [ ] El contexto de EC satisface el refuerzo de CO: 9.56 % de las cédulas
-  ecuatorianas se reportan además como NIT colombiano — `co.py:40`.
+Medido antes de tocar nada: **GT/PY 100 %**, **AR/PE 82.2 %**, **EC→CO
+8.3 %**. La afirmación del README —«un identificador con dígito verificador
+no valida fuera de su país, así que no dispara»— era **falsa** dentro de una
+misma familia de diseño, y quedó corregida en los tres lugares donde se
+repetía.
+
+- [x] La información para desambiguar NO está en el número: no hay arreglo
+  que la deduzca. Lo que sí se podía era dejar de fingir que la hay. Cuando
+  dos países reclaman el mismo valor en la misma línea, `fusionar_ambiguos`
+  emite **un** hallazgo que los nombra a todos y ofrece el camino para
+  volverlo inequívoco (`paises:`), en vez de dos veredictos que se
+  contradicen con la misma seguridad.
+- [x] Corregido también el docstring de `paises/__init__.py` y el de
+  `config.Config.paises`, que repetían la promesa falsa.
 
 ### Los dieciséis países: contexto y rellenos — saldado en v0.32.0
 

@@ -17,11 +17,24 @@ arreglo del motor llega a todos el mismo día.
 
 CÓMO SE ELIGE QUÉ SE REVISA
 
-Por omisión se cargan TODOS los países disponibles. Suena agresivo y no lo es:
-un detector con dígito verificador prácticamente no dispara fuera de su país
-—un RFC mexicano no valida como CPF brasileño—, así que el costo de tenerlos
-todos encendidos es casi nulo y el beneficio es que nadie se queda sin
+Por omisión se cargan TODOS los países disponibles, porque el costo de
+tenerlos encendidos es bajo y el beneficio es que nadie se queda sin
 protección por no haber leído la documentación.
+
+«Bajo» no es «nulo», y conviene decir la verdad medida. Entre familias
+distintas casi no hay cruce —un RFC mexicano no valida como CPF brasileño—,
+pero entre identificadores del MISMO diseño el cruce es la regla, no la
+excepción: el NIT guatemalteco y el RUC paraguayo son el mismo módulo 11
+sobre la misma base, así que un número válido en uno lo es en el otro el
+100 % de las veces; el CUIT argentino y el RUC peruano comparten los pesos
+y cruzan el 82 %; y la cédula ecuatoriana satisface el refuerzo del NIT
+colombiano el 8 % de las veces.
+
+Eso NO se resuelve mirando el número, porque la información no está ahí. Se
+resuelve diciéndolo: cuando dos países reclaman el mismo valor en la misma
+línea, el motor emite UN hallazgo que los nombra a todos (ver
+`nucleo.fusionar_ambiguos`). Y quien sepa en qué país vive su dato lo acota
+con `paises:`, que es lo que vuelve el veredicto inequívoco.
 
 Quien quiera acotarlo lo dice en la configuración:
 
@@ -56,6 +69,34 @@ def disponibles() -> list[str]:
     )
 
 
+NOMBRES = {
+    "ar": "Argentina", "br": "Brasil", "ca": "Canadá", "cl": "Chile",
+    "co": "Colombia", "do": "República Dominicana", "ec": "Ecuador",
+    "es": "España", "gt": "Guatemala", "mx": "México", "pe": "Perú",
+    "pt": "Portugal", "py": "Paraguay", "us": "Estados Unidos",
+    "uy": "Uruguay", "ve": "Venezuela",
+}
+"""El país con todas sus letras, para el texto que lee una persona.
+
+El código de dos letras sirve para `paises:` en la configuración; en un
+mensaje —«también valida como el ruc_py de py»— no se lee. Vive aquí y no
+en cada módulo porque es una sola línea por país y así no se olvida al
+agregar el diecisiete: `disponibles()` y este mapa se comparan en las
+pruebas.
+"""
+
+PAIS_DE_DETECTOR: dict[str, str] = {}
+"""De qué país es cada detector de identificadores, llenado al cargar.
+
+Existe para poder FUSIONAR los hallazgos ambiguos. Dos países pueden usar
+el mismo algoritmo sobre la misma base —Guatemala y Paraguay son módulo 11
+sobre cinco a ocho dígitos, y comparten «factura» y «contribuyente» como
+palabra de contexto—, así que el mismo número dispara los dos detectores y
+el reporte afirmaba dos cosas incompatibles sobre él. Saber el país permite
+decirlo una vez y con los candidatos nombrados.
+"""
+
+
 def cargar(cfg: "Config") -> list["Detector"]:
     pedidos = cfg.paises or disponibles()
     fuera: list[Detector] = []
@@ -67,5 +108,8 @@ def cargar(cfg: "Config") -> list["Detector"]:
                 f"docs/AGREGAR_PAIS.md explica cómo."
             )
         mod = importlib.import_module(f"{__name__}.{codigo}")
-        fuera.extend(mod.detectores(cfg))
+        propios = mod.detectores(cfg)
+        for d in propios:
+            PAIS_DE_DETECTOR[d.nombre] = codigo
+        fuera.extend(propios)
     return fuera

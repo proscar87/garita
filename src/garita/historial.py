@@ -48,6 +48,7 @@ from typing import Iterable
 
 from .nucleo import (
     MAX_BYTES, Detector, Exencion, Hallazgo, descifrar, filtrar_por_ruta,
+    fusionar_ambiguos,
     ruta_revisable,
 )
 
@@ -386,6 +387,10 @@ def revisar_historial(
                         mejor = filtrado
                 if mejor is not None:
                     sucios.setdefault(sha, []).append(mejor)
+
+    # El mismo criterio que el motor normal: dos motores con reglas
+    # distintas darían dos verdades distintas sobre el mismo commit.
+    sucios = {sha: fusionar_ambiguos(hs) for sha, hs in sucios.items()}
 
     if not sucios:
         return res

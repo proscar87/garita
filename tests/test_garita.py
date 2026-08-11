@@ -4189,3 +4189,81 @@ class LosRellenosNoSonPersonas(unittest.TestCase):
         self.assertEqual(len(bases), 10)
         self.assertIn("00000000", bases)
         self.assertNotIn("12345678", bases)
+
+
+class UnNumeroUnHallazgo(unittest.TestCase):
+    """v0.33.0: el README prometía que «un identificador con dígito
+    verificador no valida fuera de su país». Es cierto entre familias
+    distintas y FALSO dentro de la misma: GT y PY son el mismo módulo 11
+    sobre la misma base (cruzan el 100 %), AR y PE comparten los pesos
+    (82 %). El reporte emitía dos hallazgos afirmando dos nacionalidades
+    incompatibles con la misma seguridad."""
+
+    def _hallazgos(self, texto, cfg=None):
+        from garita.nucleo import revisar
+        with repo_temporal({"datos.csv": texto}) as td:
+            return revisar(Path(td), construir(cfg or Config(), Path(td))).hallazgos
+
+    def test_gt_y_py_dan_un_solo_hallazgo_con_los_dos_candidatos(self):
+        hs = self._hallazgos("NIT del contribuyente: 1234567-9\n")
+        self.assertEqual(len(hs), 1, [h.detector for h in hs])
+        self.assertIn("también valida", hs[0].por_que)
+        self.assertIn("Paraguay", hs[0].por_que)
+
+    def test_ar_y_pe_dan_un_solo_hallazgo_con_los_dos_candidatos(self):
+        hs = self._hallazgos("factura RUC 20100047218\n")
+        self.assertEqual(len(hs), 1, [h.detector for h in hs])
+        self.assertIn("también valida", hs[0].por_que)
+        self.assertIn("Perú", hs[0].por_que)
+
+    def test_acotar_con_paises_vuelve_el_veredicto_inequivoco(self):
+        # El camino que la propia herramienta ofrece en el mensaje tiene que
+        # funcionar: con un solo país no hay ambigüedad que declarar.
+        hs = self._hallazgos("NIT del contribuyente: 1234567-9\n",
+                             Config(paises=["gt"]))
+        self.assertEqual(len(hs), 1)
+        self.assertEqual(hs[0].detector, "nit_gt")
+        self.assertNotIn("también valida", hs[0].por_que)
+
+    def test_la_eleccion_del_detector_es_estable(self):
+        # El detector que sobrevive decide la clave de la línea base, del
+        # SARIF y de las exenciones: si cambiara entre corridas, la deuda
+        # aceptada dejaría de casar sin que nadie tocara nada.
+        primero = [h.detector for h in
+                   self._hallazgos("NIT del contribuyente: 1234567-9\n")]
+        for _ in range(3):
+            self.assertEqual(
+                [h.detector for h in
+                 self._hallazgos("NIT del contribuyente: 1234567-9\n")],
+                primero)
+
+    def test_dos_detectores_de_familias_distintas_no_se_fusionan(self):
+        # El contrapeso: fusionar es para veredictos que se CONTRADICEN.
+        # Una credencial y un identificador en la misma línea no se
+        # contradicen, se suman — y perder uno sería un falso negativo.
+        texto = ('token = "ghp_' + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8" + '"'
+                 " # cedula: 1719141770\n")
+        detectados = {h.detector for h in self._hallazgos(texto)}
+        self.assertIn("llave_proveedor", detectados)
+        self.assertIn("cedula_ec", detectados)
+
+    def test_dos_numeros_distintos_en_la_misma_linea_siguen_siendo_dos(self):
+        hs = self._hallazgos("cedulas 1719141770 y 0926687856\n")
+        self.assertEqual(len(hs), 2, [(h.detector, h.que) for h in hs])
+
+    def test_cada_pais_disponible_tiene_nombre(self):
+        # El mapa vive aparte de los módulos, así que hay que impedir que se
+        # olvide al agregar el diecisiete.
+        from garita.detectores.paises import NOMBRES, disponibles
+        self.assertEqual(sorted(NOMBRES), disponibles())
+
+    def test_dos_documentos_del_mismo_pais_no_se_fusionan(self):
+        # Regresión medida contra un repositorio real: el CURP y el RFC de
+        # una misma persona empiezan igual y pueden terminar igual, así que
+        # comparten el `que` RECORTADO. Fusionarlos perdía un identificador
+        # entero — dos documentos del mismo país no se contradicen.
+        from garita.detectores.paises import PAIS_DE_DETECTOR
+        texto = "  curp: GOPE800101HDFRRD01, rfc: GOPE800101A18\n"
+        detectados = {h.detector for h in self._hallazgos(texto)}
+        self.assertEqual(detectados, {"curp", "rfc"})
+        self.assertEqual(PAIS_DE_DETECTOR["curp"], PAIS_DE_DETECTOR["rfc"])

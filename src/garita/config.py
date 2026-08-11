@@ -52,10 +52,12 @@ class Config:
     paises: list[str] = field(default_factory=list)
     """Qué paquetes de identificadores cargar. Vacío = todos los disponibles.
 
-    Tenerlos todos encendidos por omisión casi no cuesta: un identificador con
-    dígito verificador no valida fuera de su país, así que no dispara. Y
-    evita que alguien se quede sin protección por no haber leído la
-    documentación."""
+    Tenerlos todos encendidos por omisión cuesta poco y evita que alguien se
+    quede sin protección por no haber leído la documentación. Pero «poco» no
+    es «nada»: entre identificadores del mismo diseño el cruce es la regla
+    —el NIT guatemalteco y el RUC paraguayo cruzan el 100 %—, y ahí acotar
+    con esta lista es lo que vuelve el veredicto inequívoco. Ver
+    `nucleo.fusionar_ambiguos`."""
 
     fallar_en_aviso: bool = False
     """Por omisión los avisos no rompen el build. Quien quiera tolerancia
