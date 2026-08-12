@@ -139,10 +139,44 @@ contra los consumidores antes de mover el tag `v0`.
 
 ## 3. Plausible, con receta, sin verificar
 
-Queda **uno**. Los ocho de «los cuatro canales» se saldaron en **v0.30.0**,
-los seis del «repositorio hostil» en **v0.31.0**, ocho de calibración en
-**v0.32.0** —con dos refutados— y las tres colisiones entre países en
-**v0.33.0**. Lo único abierto es el padrón exportado pelado.
+Quedan **tres**, y dos son nuevos: salieron de correr Garita sobre los
+repositorios que la consumen, no de una oleada. Los ocho de «los cuatro
+canales» se saldaron en **v0.30.0**, los seis del «repositorio hostil» en
+**v0.31.0**, ocho de calibración en **v0.32.0** —con dos refutados— y las
+tres colisiones entre países en **v0.33.0**.
+
+### Lo que encontró el uso, no la auditoría (2026-08-12)
+
+- [ ] **`self.x = x` se reporta como credencial** — `secretos.py:427`,
+  *falso positivo*, **medido: 20 de los 20 avisos del consumidor más
+  grande**. `_ES_REFERENCIA` reconoce la referencia con punto
+  (`config.token`) y la indexada (`os.environ[...]`), pero no la
+  **desnuda**: en `self.azure_client_secret = azure_client_secret` el
+  valor es el parámetro del constructor, o sea el patrón más común de
+  Python. La política ya está escrita en el comentario de la función —«no
+  parecer una referencia, que es lo que pone ahí quien hizo las cosas
+  bien»—; falta el caso más frecuente de todos.
+
+  *Receta:* añadir `\w{1,40}$` a `_ES_REFERENCIA`, o sea un identificador
+  entero sin comillas. Un secreto de verdad no es un identificador válido
+  —tiene guiones, puntos, mayúsculas mezcladas o largo mayor—, y la rama
+  sólo aplica al valor SIN comillas. **Verificar el contrapeso**: que
+  `token = supersecreto123` (sin comillas, un valor plausible) siga
+  sonando, y medir contra los cuatro consumidores antes de mover `v0`.
+
+- [ ] **Un motivo repetido palabra por palabra no es un motivo** —
+  *nuevo, sin detector*. En un repositorio real, treinta exenciones
+  compartían un motivo de línea base copiado en bloque; una de ellas
+  cubría un archivo que ligaba propietarios a sus lotes, justo lo que la
+  regla del proyecto prohíbe. El motivo boilerplate **silenció lo que no
+  debía y nadie lo notó** hasta una revisión a mano.
+
+  Garita ya exige que el motivo exista y rechaza el vacío (v0.31.0), pero
+  no mira si es el mismo texto en N exenciones. *Receta:* avisar —no
+  bloquear— cuando un mismo motivo literal cubre más de un puñado de
+  archivos: «N exenciones comparten motivo; un motivo copiado en bloque es
+  un motivo que no se pensó por archivo». Es el mismo argumento que ya
+  sostiene las exenciones muertas y los recortes de configuración.
 
 ### El repositorio hostil — saldado en v0.31.0
 
@@ -268,3 +302,24 @@ repetía.
   mismo mecanismo que `nombres:`; es doctrinalmente sostenible porque un
   nombre que legítimamente vive en el repositorio no añade exposición
   nueva. Cambia la semántica pública de la herramienta.
+
+  **Evidencia de campo a favor (2026-08-12):** ese mismo repositorio acabó
+  con más de treinta exenciones por archivo, y una de ellas —con motivo
+  copiado en bloque— tapó un archivo que ligaba propietarios a sus lotes.
+  Es exactamente la falla que la exención por archivo permite: el motivo
+  habla de un caso y el alcance cubre otro. Una lista por VALOR no tiene
+  esa holgura.
+
+---
+
+## 5. Estado de los consumidores (2026-08-12)
+
+Los cuatro salen con código 0, y dos pendientes viejos quedaron cerrados
+por su lado:
+
+| Repo | Estado |
+|---|---|
+| `velador` | limpio |
+| `mifo` | limpio; su línea base ya está en **formato 2** con 53 hallazgos |
+| `coto-orquideas` | 1 aviso; triaje humano hecho, exención muerta retirada |
+| `cinaba-platform` | 20 avisos, **los 20 del mismo falso positivo** de arriba |
