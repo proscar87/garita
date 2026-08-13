@@ -139,30 +139,54 @@ contra los consumidores antes de mover el tag `v0`.
 
 ## 3. Plausible, con receta, sin verificar
 
-Quedan **tres**, y dos son nuevos: salieron de correr Garita sobre los
+Quedan **cuatro**, y dos son nuevos: salieron de correr Garita sobre los
 repositorios que la consumen, no de una oleada. Los ocho de «los cuatro
 canales» se saldaron en **v0.30.0**, los seis del «repositorio hostil» en
 **v0.31.0**, ocho de calibración en **v0.32.0** —con dos refutados— y las
 tres colisiones entre países en **v0.33.0**.
 
+Las recetas de aquí abajo **no son diseño aprobado**: son la primera idea
+de quien reportó el defecto, y ya pasó una vez que la receta era peor que
+el defecto (ver la nota del 2026-08-13 en el primer ítem). Reproducir y
+medir antes de escribirlas.
+
 ### Lo que encontró el uso, no la auditoría (2026-08-12)
 
-- [ ] **`self.x = x` se reporta como credencial** — `secretos.py:427`,
-  *falso positivo*, **medido: 20 de los 20 avisos del consumidor más
-  grande**. `_ES_REFERENCIA` reconoce la referencia con punto
-  (`config.token`) y la indexada (`os.environ[...]`), pero no la
-  **desnuda**: en `self.azure_client_secret = azure_client_secret` el
-  valor es el parámetro del constructor, o sea el patrón más común de
-  Python. La política ya está escrita en el comentario de la función —«no
-  parecer una referencia, que es lo que pone ahí quien hizo las cosas
-  bien»—; falta el caso más frecuente de todos.
+- [ ] **`self.x = x` se reporta como credencial** — `secretos.py:474`
+  (`_ES_REFERENCIA`), *falso positivo*, **medido: 20 de los 20 avisos del
+  consumidor más grande**. El filtro reconoce la referencia con punto
+  (`config.token`) y la indexada (`os.environ[...]`), pero no el caso en
+  que **el valor repite el nombre asignado**: en
+  `self.azure_client_secret = azure_client_secret` el valor es el
+  parámetro del constructor, o sea el patrón más común de Python. La
+  política ya está escrita en el comentario de la función —«no parecer una
+  referencia, que es lo que pone ahí quien hizo las cosas bien»—; falta el
+  caso más frecuente de todos.
 
-  *Receta:* añadir `\w{1,40}$` a `_ES_REFERENCIA`, o sea un identificador
-  entero sin comillas. Un secreto de verdad no es un identificador válido
-  —tiene guiones, puntos, mayúsculas mezcladas o largo mayor—, y la rama
-  sólo aplica al valor SIN comillas. **Verificar el contrapeso**: que
-  `token = supersecreto123` (sin comillas, un valor plausible) siga
-  sonando, y medir contra los cuatro consumidores antes de mover `v0`.
+  *Receta:* la señal es la **igualdad entre el valor y el identificador
+  asignado**, no la forma del valor. Tomar el identificador completo a la
+  izquierda del `=` —`_asignaciones_de_la_linea` sólo entrega la cola que
+  casó (`secret`), así que hay que añadirlo al generador o leerlo de la
+  línea— y descartar cuando `valor.lower() == izquierda.rsplit(".")[-1]
+  .lower()`, sólo en la rama SIN comillas. Verificado que separa los ocho
+  casos: silencia los cuatro `self.x = x` (incluido `this.apiSecret =
+  apiSecret`) y deja sonar `AWS_SECRET_ACCESS_KEY=…`, `DB_PASSWORD=…`,
+  una llave hex de 32 y `password = otro_valor_largo`.
+
+  > **Nota del 2026-08-13 — la receta anterior era peor que el defecto.**
+  > Decía «añadir `\w{1,40}$`, porque un secreto de verdad no es un
+  > identificador válido». Es falso: `\w` incluye mayúsculas y dígitos, y
+  > el techo de 40 queda por encima del piso de 16 de
+  > `NOMBRES_SOSPECHOSOS_PELON`. Medido, habría **silenciado
+  > `AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY` en un
+  > `.env`**, que hoy se reporta y que ningún otro detector ve —el
+  > catálogo de proveedores sólo trae `AKIA`, que es el ID, no el
+  > secreto—. O sea: cambiaba 20 falsos positivos por un falso negativo
+  > total, en la rama que existe justo para el `.env`. Y el contrapeso que
+  > proponía (`token = supersecreto123`) no podía pasar: son 15
+  > caracteres, debajo del piso de 16, así que hoy no produce ningún
+  > hallazgo. La moraleja general: **una receta escrita de memoria sobre
+  > la forma del valor no vale; hay que correrla.**
 
 - [ ] **Un motivo repetido palabra por palabra no es un motivo** —
   *nuevo, sin detector*. En un repositorio real, treinta exenciones
@@ -173,10 +197,17 @@ tres colisiones entre países en **v0.33.0**.
 
   Garita ya exige que el motivo exista y rechaza el vacío (v0.31.0), pero
   no mira si es el mismo texto en N exenciones. *Receta:* avisar —no
-  bloquear— cuando un mismo motivo literal cubre más de un puñado de
-  archivos: «N exenciones comparten motivo; un motivo copiado en bloque es
-  un motivo que no se pensó por archivo». Es el mismo argumento que ya
-  sostiene las exenciones muertas y los recortes de configuración.
+  bloquear— cuando un mismo motivo literal aparece en más de un puñado de
+  **exenciones**: «N exenciones comparten motivo; un motivo copiado en
+  bloque es un motivo que no se pensó por archivo». Es el mismo argumento
+  que ya sostiene las exenciones muertas y los recortes de configuración.
+
+  Se cuentan **exenciones, no archivos cubiertos**, y la diferencia
+  importa: una sola exención honesta como `tests/vectores/**` con un
+  motivo bien escrito cubre cincuenta archivos, y contar archivos la
+  marcaría — un falso positivo sobre la configuración más limpia posible.
+  Lo que falló en campo fueron treinta entradas SEPARADAS compartiendo un
+  texto copiado.
 
 ### El repositorio hostil — saldado en v0.31.0
 
