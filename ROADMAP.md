@@ -153,8 +153,9 @@ medir antes de escribirlas.
 ### Lo que encontró el uso, no la auditoría (2026-08-12)
 
 - [ ] **`self.x = x` se reporta como credencial** — `secretos.py:474`
-  (`_ES_REFERENCIA`), *falso positivo*, **medido: 20 de los 20 avisos del
-  consumidor más grande**. El filtro reconoce la referencia con punto
+  (`_ES_REFERENCIA`), *falso positivo*, **medido con el motor: 17 de los
+  20 avisos del consumidor más grande** (ver la corrección de la §5: la
+  primera anotación decía «los 20» y era falsa). El filtro reconoce la referencia con punto
   (`config.token`) y la indexada (`os.environ[...]`), pero no el caso en
   que **el valor repite el nombre asignado**: en
   `self.azure_client_secret = azure_client_secret` el valor es el
@@ -343,7 +344,7 @@ repetía.
 
 ---
 
-## 5. Estado de los consumidores (2026-08-12)
+## 5. Estado de los consumidores (2026-08-14)
 
 Los cuatro salen con código 0, y dos pendientes viejos quedaron cerrados
 por su lado:
@@ -353,4 +354,20 @@ por su lado:
 | `velador` | limpio |
 | `mifo` | limpio; su línea base ya está en **formato 2** con 53 hallazgos |
 | `coto-orquideas` | 1 aviso; triaje humano hecho, exención muerta retirada |
-| `cinaba-platform` | 20 avisos, **los 20 del mismo falso positivo** de arriba |
+| `cinaba-platform` | 20 avisos: **17** del falso positivo de arriba, **1 real** y 2 sin triar |
+
+> **Corrección del 2026-08-14.** El 12 de agosto anoté aquí «los 20 del
+> mismo falso positivo». Es falso, y al medirlo con el motor —no con un
+> recuento a ojo— salieron 17. De los otros tres, **uno es un hallazgo
+> real**: un `POSTGRES_PASSWORD` con valor literal de 16 caracteres en un
+> `docker-compose.dev.yml`, que no es interpolación ni marcador reconocido
+> y que además vive en cuatro commits del historial. Los otros dos son
+> formas distintas —una asignación `row.x = y` y un valor entrecomillado—
+> y **no están triadas**.
+>
+> Lo peligroso del error no era la cifra: era la frase. «Los 20 son falso
+> positivo» invita a silenciar el detector entero en ese repositorio, y
+> con él la contraseña. Un resumen que redondea hacia «esto es ruido» hace
+> el mismo daño que un falso negativo, sólo que por la vía del lector.
+> Cuando se caracterice un conjunto de hallazgos ajenos, **contarlos con
+> el motor y triar el resto uno por uno** antes de llamarlo ruido.
